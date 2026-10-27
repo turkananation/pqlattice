@@ -1,0 +1,58 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Nightly benchmark run for trend tracking
+    - cron: '0 2 * * *'
+
+jobs:
+  benchmarks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.13.x'
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Build AOT benchmark binary
+        run: dart compile exe test/benchmarks/benchmarks_all.dart -o /tmp/pq_bench
+
+      - name: Run benchmarks (AOT)
+        run: |
+          /tmp/pq_bench --mode aot --measure-memory > benchmarks-aot.tsv 2> benchmarks-aot-stderr.txt || true
+
+      - name: Upload benchmark results (AOT)
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks-aot
+          path: |
+            benchmarks-aot.tsv
+            benchmarks-aot-stderr.txt
+          retention-days: 30
+
+      - name: Run benchmarks (JIT)
+        run: |
+          dart run test/benchmarks/benchmarks_all.dart --mode jit --measure-memory > benchmarks-jit.tsv 2> benchmarks-jit-stderr.txt || true
+
+      - name: Upload benchmark results (JIT)
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks-jit
+          path: |
+            benchmarks-jit.tsv
+            benchmarks-jit-stderr.txt
+          retention-days: 30
+
+      - name: Print memory summary
+        run: |
+          if [ -f benchmarks-aot-stderr.txt ]; then grep MEMORY_SUMMARY benchmarks-aot-stderr.txt || true; fi
+          if [ -f benchmarks-jit-stderr.txt ]; then grep MEMORY_SUMMARY benchmarks-jit-stderr.txt || true; fi

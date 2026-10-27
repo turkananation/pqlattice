@@ -66,7 +66,7 @@ BenchmarkResult _benchSchoolbookToy(
   );
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final c = RingMul.schoolbookNegacyclic(a, b, ring);
       blackHole += c.coeffs[0];
@@ -118,7 +118,7 @@ BenchmarkResult _benchSchoolbookFips(
   );
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final c = RingMul.schoolbookNegacyclic(a, b, ring);
       blackHole += c.coeffs[0];

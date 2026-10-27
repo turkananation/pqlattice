@@ -61,7 +61,7 @@ BenchmarkResult _benchReduceBarrett(
   var idx = 0;
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       for (var i = 0; i < kDefaultIterations; i++) {
         final r = ModQ.reduceBarrett(products[idx++], barrett);
@@ -115,7 +115,7 @@ BenchmarkResult _benchReducePercent(
   var idx = 0;
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       for (var i = 0; i < kDefaultIterations; i++) {
         final r = ModQ.reduce(products[idx++], q);
@@ -171,7 +171,7 @@ BenchmarkResult _benchMontMul(
   var idx = 0;
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       for (var i = 0; i < kDefaultIterations; i++) {
         final r = ModQ.montMul(ops[idx++], ops[idx++], mont);
@@ -232,7 +232,7 @@ BenchmarkResult _benchMontReduce(
   var idx = 0;
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       for (var i = 0; i < kDefaultIterations; i++) {
         final r = ModQ.montReduce(inputs[idx++], mont);

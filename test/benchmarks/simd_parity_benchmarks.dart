@@ -53,7 +53,7 @@ BenchmarkResult _benchScalarPointwise(
   );
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final c = Basemul.pointwise(a, b, ring);
       blackHole += c.coeffs[0];
@@ -106,7 +106,7 @@ BenchmarkResult _benchSimdPointwise(
   final out = Poly.zero(ring);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       NttSimdInt32x4.pointwiseInPlace(out, a, b, ring);
       blackHole += out.coeffs[0];

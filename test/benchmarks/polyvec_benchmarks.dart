@@ -49,7 +49,7 @@ BenchmarkResult _benchPolyVecConstruct(
   final k = ring.n ~/ 4; // vector length scaled to ring size
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final v = PolyVec.zero(ring, k);
       blackHole += v.length;
@@ -94,7 +94,7 @@ BenchmarkResult _benchPolyVecClone(
   final source = PolyVec.zero(ring, k);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final v = source.clone();
       blackHole += v.length;
@@ -139,7 +139,7 @@ BenchmarkResult _benchPolyVecIndexing(
   final v = PolyVec.zero(ring, k);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       for (var i = 0; i < k; i++) {
         blackHole += v[i].coeffs[0];
@@ -185,7 +185,7 @@ BenchmarkResult _benchPolyMatConstruct(
   final cols = 4;
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final m = PolyMat.zero(ring, rows, cols);
       blackHole += m.rows * m.cols;
@@ -232,7 +232,7 @@ BenchmarkResult _benchPolyMatAtSetAt(
   final p = benchPoly(ring, 0x1753);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       for (var r = 0; r < rows; r++) {
         for (var c = 0; c < cols; c++) {
@@ -283,7 +283,7 @@ BenchmarkResult _benchPolyVecForwardVec(
   final vec = PolyVec.fromPolys(ring, polys);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final out = engine.forwardVec(vec);
       for (var i = 0; i < k; i++) {

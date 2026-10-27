@@ -62,7 +62,7 @@ BenchmarkResult _benchPipelineAllocPlain(
   final b = benchPoly(ring, 0xBEEF);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final cHat = ring.q == 3329 && ring.n == 256
           ? Basemul.mlKemPairs(engine.forward(a), engine.forward(b), ring)
@@ -108,7 +108,7 @@ BenchmarkResult _benchPipelineInPlacePlain(
 ) {
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final x = benchPoly(ring, 0xCAFE + blackHole);
       final y = benchPoly(ring, 0xDEAD + blackHole);
@@ -167,7 +167,7 @@ BenchmarkResult _benchPipelineAllocMontgomery(
   final b = benchPoly(ring, 0xBEEF);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final cHat = ring.q == 3329 && ring.n == 256
           ? Basemul.mlKemPairsMontgomery(
@@ -223,7 +223,7 @@ BenchmarkResult _benchPipelineInPlaceMontgomery(
 ) {
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final x = benchPoly(ring, 0xCAFE + blackHole);
       final y = benchPoly(ring, 0xDEAD + blackHole);

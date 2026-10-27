@@ -26,7 +26,6 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:pqlattice/pqlattice.dart';
-
 /// Immutable record of one benchmark measurement. Every field is required
 /// so that a number without its full context cannot be accidentally
 /// presented as a claim.
@@ -88,6 +87,10 @@ class BenchmarkResult {
   /// Git commit SHA of the tree at measurement time (empty if unavailable).
   final String gitSha;
 
+  /// Resident set size (RSS) in bytes measured after the benchmark round.
+  /// Null if memory measurement was not performed.
+  final int? memoryRssBytes;
+
   BenchmarkResult({
     required this.suite,
     required this.operation,
@@ -108,6 +111,7 @@ class BenchmarkResult {
     required this.os,
     required this.cpuCount,
     this.gitSha = '',
+    this.memoryRssBytes,
   }) : assert(roundNs.isNotEmpty),
        assert(roundNs.length == rounds);
 
@@ -177,6 +181,7 @@ class BenchmarkResult {
       'os',
       'cpuCount',
       'gitSha',
+      'memoryRssBytes',
     ].join('\t');
   }
 
@@ -207,6 +212,7 @@ class BenchmarkResult {
       os,
       cpuCount.toString(),
       gitSha,
+      memoryRssBytes?.toString() ?? '',
     ].join('\t');
   }
 }
@@ -259,6 +265,29 @@ class BenchmarkContext {
 /// the preceding writes.
 int _benchmarkSink = 0x5A5A5A5A;
 
+/// Whether memory (RSS) measurement is enabled for all benchmarks.
+/// Set via [enableMemoryMeasurement] before running suites.
+bool _measureMemory = false;
+
+/// Build mode override for testing both JIT and AOT from the same binary.
+/// If null, the build mode is auto-detected from how the script was launched.
+String? _buildModeOverride;
+
+/// Enable RSS (resident set size) memory measurement across all benchmarks.
+void enableMemoryMeasurement() {
+  _measureMemory = true;
+}
+
+/// Override the detected build mode (e.g. for JIT vs AOT variance testing).
+void overrideBuildMode(String mode) {
+  _buildModeOverride = mode;
+}
+
+/// Returns the effective build mode, honoring [overrideBuildMode] if set.
+String effectiveBuildMode(String autoDetected) {
+  return _buildModeOverride ?? autoDetected;
+}
+
 @pragma('vm:never-inline')
 void _benchmarkSinkObserve(int value) {
   _benchmarkSink ^= value;
@@ -301,24 +330,57 @@ double timedRegion(
   return sw.elapsedMicroseconds.toDouble();
 }
 
+/// Captures the current process resident set size (RSS) in bytes.
+///
+/// Returns null if the platform does not support RSS reporting.
+int? captureRssBytes() {
+  try {
+    return ProcessInfo.currentRss;
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Runs [bench] for [rounds] rounds, each [iterations] iterations, with
 /// [warmup] warm-up iterations total. Returns per-round nanoseconds.
 ///
 /// Each round re-runs warm-up internally to keep rounds independent, but
 /// warm-up cost is not included in the timed measurement.
-List<double> measureRounds(
+///
+/// If [measureMemory] is true, RSS is captured before and after the
+/// measurement and the delta (after - before) is returned as
+/// [memoryRssBytes].
+(List<double>, int?) measureRounds(
   void Function() fn, {
   required int iterations,
   required int rounds,
   required int warmup,
   required void Function(int) observe,
+  bool measureMemory = false,
 }) {
   final ns = <double>[];
+  int? beforeBytes;
+  int? afterBytes;
+
+  final doMeasureMemory = measureMemory || _measureMemory;
+
+  if (doMeasureMemory) {
+    beforeBytes = captureRssBytes();
+  }
+
   for (var r = 0; r < rounds; r++) {
     final us = timedRegion(fn, iterations, warmup, observe);
     ns.add(us * 1000.0 / iterations); // microseconds -> nanoseconds per iter
   }
-  return ns;
+
+  if (doMeasureMemory) {
+    afterBytes = captureRssBytes();
+  }
+
+  final memoryDelta = beforeBytes != null && afterBytes != null
+      ? afterBytes - beforeBytes
+      : null;
+  return (ns, memoryDelta);
 }
 
 /// Convenience: observe a Poly coefficient into the sink.

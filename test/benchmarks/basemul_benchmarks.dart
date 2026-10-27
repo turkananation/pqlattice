@@ -67,7 +67,7 @@ BenchmarkResult _benchPointwiseAlloc(
   final b = benchPoly(ring, 0xBEEF);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final c = Basemul.pointwise(a, b, ring);
       blackHole += c.coeffs[0];
@@ -110,7 +110,7 @@ BenchmarkResult _benchPointwiseInPlace(
 ) {
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final a = benchPoly(ring, 0xCAFE + blackHole);
       final b = benchPoly(ring, 0xDEAD + blackHole);
@@ -168,7 +168,7 @@ BenchmarkResult _benchPointwiseMontgomeryAlloc(
   }
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final c = Basemul.pointwiseMontgomery(aMont, bMont, ring, mont);
       blackHole += c.coeffs[0];
@@ -212,7 +212,7 @@ BenchmarkResult _benchPointwiseMontgomeryInPlace(
 ) {
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final a = benchPoly(ring, 0xCAFE + blackHole);
       final b = benchPoly(ring, 0xDEAD + blackHole);
@@ -267,7 +267,7 @@ BenchmarkResult _benchMlKemPairsAlloc(
   final b = benchPoly(ring, 0xBEEF);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final c = Basemul.mlKemPairs(a, b, ring);
       blackHole += c.coeffs[0];
@@ -309,7 +309,7 @@ BenchmarkResult _benchMlKemPairsInPlace(
 ) {
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final a = benchPoly(ring, 0xCAFE + blackHole);
       final b = benchPoly(ring, 0xDEAD + blackHole);
@@ -366,7 +366,7 @@ BenchmarkResult _benchMlKemPairsMontgomeryAlloc(
   }
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final c = Basemul.mlKemPairsMontgomery(aMont, bMont, mont);
       blackHole += c.coeffs[0];
@@ -409,7 +409,7 @@ BenchmarkResult _benchMlKemPairsMontgomeryInPlace(
 ) {
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final a = benchPoly(ring, 0xCAFE + blackHole);
       final b = benchPoly(ring, 0xDEAD + blackHole);

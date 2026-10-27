@@ -65,7 +65,7 @@ BenchmarkResult _benchNttForwardAlloc(
   final a = benchPoly(ring, 0x1753);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final h = engine.forward(a);
       blackHole += h.coeffs[0];
@@ -111,7 +111,7 @@ BenchmarkResult _benchNttInverseAlloc(
   final h = engine.forward(a); // setup: produce NTT-domain input
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final back = engine.inverse(h);
       blackHole += back.coeffs[0];
@@ -156,7 +156,7 @@ BenchmarkResult _benchNttRoundtripAlloc(
   final a = benchPoly(ring, 0xCAFE);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final back = engine.inverse(engine.forward(a));
       blackHole += back.coeffs[0];
@@ -200,7 +200,7 @@ BenchmarkResult _benchNttForwardInPlace(
   final engine = NttEngine(ring);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final p = benchPoly(ring, 0xDEAD + blackHole);
       engine.forwardInPlace(p);
@@ -245,7 +245,7 @@ BenchmarkResult _benchNttInverseInPlace(
   final engine = NttEngine(ring);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final p = benchPoly(ring, 0xFEED + blackHole);
       engine.forwardInPlace(p);
@@ -293,7 +293,7 @@ BenchmarkResult _benchNttMontgomeryForwardAlloc(
   final a = benchPoly(ring, 0x5EED);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final h = engine.forward(a);
       blackHole += h.coeffs[0];
@@ -339,7 +339,7 @@ BenchmarkResult _benchNttMontgomeryRoundtripAlloc(
   final a = benchPoly(ring, 0xC0FFEE);
   var blackHole = 0;
 
-  final ns = measureRounds(
+  final (ns, _) = measureRounds(
     () {
       final back = engine.inverse(engine.forward(a));
       blackHole += back.coeffs[0];
