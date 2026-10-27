@@ -26,6 +26,11 @@ final class NttEngine {
   final BarrettParams _barrett;
   final MontgomeryParams? _montgomery;
 
+  /// Precomputed Montgomery-domain twiddles (zeta * R mod q).
+  /// Populated only when Montgomery-domain NTT is active; avoids calling
+  /// [ModQ.toMont] on every butterfly in the inner loop.
+  List<int>? _zetasMont;
+
   NttEngine(
     this.ring, {
     NttParams? params,
@@ -33,7 +38,11 @@ final class NttEngine {
     MontgomeryParams? montgomeryParams,
   }) : params = params ?? NttParams.forRing(ring),
        _barrett = BarrettParams.forQ(ring.q),
-       _montgomery = montgomeryParams {
+       _montgomery = montgomeryParams,
+       _zetasMont = null {
+    _zetasMont = montgomeryParams != null && montgomeryParams.isReady
+        ? _precomputeMontgomeryZetas(this.params.zetas, montgomeryParams)
+        : null;
     if (ring.n != this.params.ring.n || ring.q != this.params.ring.q) {
       throw ArgumentError('NttParams ring does not match engine ring');
     }
@@ -179,15 +188,33 @@ final class NttEngine {
     final q = ring.q;
     final zetas = params.zetas;
     var k = 1;
+    var layer = 0;
     for (var len = 128; len >= 2; len >>= 1) {
+      layer++;
       for (var start = 0; start < 256; start += 2 * len) {
         final zeta = zetas[k++];
         for (var j = start; j < start + len; j++) {
-          final t = _mul(zeta, f[j + len]);
-          f[j + len] = ModQ.subFast(f[j], t, q);
-          f[j] = ModQ.addFast(f[j], t, q);
+          final fj = f[j];
+          final fjl = f[j + len];
+          final t = _mulBarrettMlKemLazy(zeta, fjl, q);
+          // f[j + len] = fj - t mod q
+          final diff = fj - t;
+          f[j + len] = diff < 0 ? diff + q : diff;
+          // fj = fj + t mod q
+          final sum = fj + t;
+          f[j] = sum >= q ? sum - q : sum;
         }
       }
+      // Lazy reduction every 2 layers: after layers 2, 4, 6
+      if (layer % 2 == 0) {
+        for (var i = 0; i < 256; i++) {
+          f[i] = _reduceBarrettMlKemLazy(f[i], q);
+        }
+      }
+    }
+    // Final reduce after layer 7
+    for (var i = 0; i < 256; i++) {
+      f[i] = _reduceBarrettMlKemLazy(f[i], q);
     }
   }
 
@@ -195,19 +222,33 @@ final class NttEngine {
     final q = ring.q;
     final zetas = params.zetas;
     var k = 127;
+    var layer = 0;
     for (var len = 2; len <= 128; len <<= 1) {
+      layer++;
       for (var start = 0; start < 256; start += 2 * len) {
         final zeta = zetas[k--];
         for (var j = start; j < start + len; j++) {
-          final t = f[j];
-          f[j] = ModQ.addFast(t, f[j + len], q);
-          f[j + len] = _mul(zeta, ModQ.subFast(f[j + len], t, q));
+          final fj = f[j];
+          final fjl = f[j + len];
+          // fj = fj + fjl mod q
+          final sum = fj + fjl;
+          f[j] = sum >= q ? sum - q : sum;
+          // fjl = zeta * (fjl - fj) mod q
+          final diff = fjl - fj;
+          final reducedDiff = diff < 0 ? diff + q : diff;
+          final t = _mulBarrettMlKemLazy(zeta, reducedDiff, q);
+          f[j + len] = t;
+        }
+      }
+      if (layer % 2 == 0) {
+        for (var i = 0; i < 256; i++) {
+          f[i] = _reduceBarrettMlKemLazy(f[i], q);
         }
       }
     }
     final inv = params.invNScale;
     for (var i = 0; i < 256; i++) {
-      f[i] = _mul(f[i], inv);
+      f[i] = _mulBarrettMlKemLazy(f[i], inv, q);
     }
   }
 
@@ -357,11 +398,11 @@ final class NttEngine {
 
   void _mlKemForwardMontgomery(List<int> f, MontgomeryParams mont) {
     final q = ring.q;
-    final zetas = params.zetas;
+    final zetasMont = _zetasMont!;
     var k = 1;
     for (var len = 128; len >= 2; len >>= 1) {
       for (var start = 0; start < 256; start += 2 * len) {
-        final zeta = ModQ.toMont(zetas[k++], mont);
+        final zeta = zetasMont[k++];
         for (var j = start; j < start + len; j++) {
           final t = _mul(zeta, f[j + len]);
           f[j + len] = ModQ.subFast(f[j], t, q);
@@ -373,12 +414,12 @@ final class NttEngine {
 
   void _mlKemInverseMontgomery(List<int> f, MontgomeryParams mont) {
     final q = ring.q;
-    final zetas = params.zetas;
+    final zetasMont = _zetasMont!;
     var k = 127;
     final inv = ModQ.toMont(params.invNScale, mont);
     for (var len = 2; len <= 128; len <<= 1) {
       for (var start = 0; start < 256; start += 2 * len) {
-        final zeta = ModQ.toMont(zetas[k--], mont);
+        final zeta = zetasMont[k--];
         for (var j = start; j < start + len; j++) {
           final t = f[j];
           f[j] = ModQ.addFast(t, f[j + len], q);
@@ -393,11 +434,11 @@ final class NttEngine {
 
   void _mlDsaForwardMontgomery(List<int> a, MontgomeryParams mont) {
     final q = ring.q;
-    final zetas = params.zetas;
+    final zetasMont = _zetasMont!;
     var k = 1;
     for (var len = 128; len >= 1; len >>= 1) {
       for (var start = 0; start < 256; start += 2 * len) {
-        final zeta = ModQ.toMont(zetas[k++], mont);
+        final zeta = zetasMont[k++];
         for (var j = start; j < start + len; j++) {
           final t = _mul(zeta, a[j + len]);
           a[j + len] = ModQ.subFast(a[j], t, q);
@@ -409,12 +450,12 @@ final class NttEngine {
 
   void _mlDsaInverseMontgomery(List<int> a, MontgomeryParams mont) {
     final q = ring.q;
-    final zetas = params.zetas;
+    final zetasMont = _zetasMont!;
     var k = 255;
     final inv = ModQ.toMont(params.invNScale, mont);
     for (var len = 1; len < 256; len <<= 1) {
       for (var start = 0; start < 256; start += 2 * len) {
-        var zeta = ModQ.toMont(zetas[k--], mont);
+        var zeta = zetasMont[k--];
         zeta = q - zeta; // -zetas[k] mod q in Montgomery domain
         for (var j = start; j < start + len; j++) {
           final t = a[j];
@@ -432,11 +473,11 @@ final class NttEngine {
   void _fnDsaForwardMontgomery(List<int> a, MontgomeryParams mont) {
     final q = ring.q;
     final n = ring.n;
-    final zetas = params.zetas;
+    final zetasMont = _zetasMont!;
     var k = 1;
     for (var len = n >> 1; len >= 1; len >>= 1) {
       for (var start = 0; start < n; start += 2 * len) {
-        final zeta = ModQ.toMont(zetas[k++], mont);
+        final zeta = zetasMont[k++];
         for (var j = start; j < start + len; j++) {
           final t = _mul(zeta, a[j + len]);
           a[j + len] = ModQ.subFast(a[j], t, q);
@@ -449,13 +490,13 @@ final class NttEngine {
   void _fnDsaInverseMontgomery(List<int> a, MontgomeryParams mont) {
     final q = ring.q;
     final n = ring.n;
-    final zetas = params.zetas;
+    final zetasMont = _zetasMont!;
     var k = n - 1;
     final inv = ModQ.toMont(params.invNScale, mont);
     // Inverse uses conjugate powers: walk the same table backwards with -zeta.
     for (var len = 1; len < n; len <<= 1) {
       for (var start = 0; start < n; start += 2 * len) {
-        var zeta = ModQ.toMont(zetas[k--], mont);
+        var zeta = zetasMont[k--];
         zeta = q - zeta; // -zeta mod q in Montgomery domain
         for (var j = start; j < start + len; j++) {
           final t = a[j];
@@ -480,5 +521,47 @@ final class NttEngine {
     if (v.ring.n != ring.n || v.ring.q != ring.q) {
       throw ArgumentError('PolyVec ring mismatch');
     }
+  }
+
+  /// Barrett reduction for ML-KEM: q = 3329, mu = 5039, shift = 24.
+  /// Handles inputs in [-2q^2, 2q^2] ≈ [-2.2e7, 2.2e7] for lazy reduction.
+  /// Inlined to avoid [BarrettParams] object field lookups in the hot loop.
+  static int _mulBarrettMlKemLazy(int zeta, int f, int q) {
+    // zeta in [0, q), f in [-2q^2, 2q^2], raw in [-2q^3, 2q^3] ≈ [-7.3e10, 7.3e10]
+    final raw = zeta * f;
+    var r = raw - ((raw * 5039) >> 24) * 3329;
+    // Barrett error bounded by ~q per reduction; r should be within ~[-2q, 2q]
+    if (r >= 3329) r -= 3329;
+    if (r >= 3329) r -= 3329;
+    if (r >= 3329) r -= 3329;
+    if (r >= 3329) r -= 3329;
+    if (r < 0) r += 3329;
+    if (r < 0) r += 3329;
+    if (r < 0) r += 3329;
+    if (r < 0) r += 3329;
+    return r;
+  }
+
+  /// Barrett reduce for lazy accumulation: input in [-2q^2, 2q^2].
+  static int _reduceBarrettMlKemLazy(int a, int q) {
+    var r = a - ((a * 5039) >> 24) * 3329;
+    if (r >= 3329) r -= 3329;
+    if (r >= 3329) r -= 3329;
+    if (r >= 3329) r -= 3329;
+    if (r >= 3329) r -= 3329;
+    if (r < 0) r += 3329;
+    if (r < 0) r += 3329;
+    if (r < 0) r += 3329;
+    if (r < 0) r += 3329;
+    return r;
+  }
+
+  /// Precomputes Montgomery-domain twiddles: `zetasMont[k] = zetas[k] * R mod q`.
+  /// This avoids calling [ModQ.toMont] on every butterfly in the inner loop.
+  static List<int> _precomputeMontgomeryZetas(
+    List<int> zetas,
+    MontgomeryParams mont,
+  ) {
+    return zetas.map((z) => ModQ.toMont(z, mont)).toList();
   }
 }
