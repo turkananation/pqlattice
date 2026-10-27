@@ -1,0 +1,28 @@
+name: pqlattice
+description: >-
+  Pure-Dart lattice and polynomial arithmetic for post-quantum cryptography.
+  NTT, modular reduction, and ring operations with acceleration on by default
+  (Barrett, optimized kernels, SIMD shape when capable). MIT license.
+  Evidence-scoped; not a FIPS 140 module.
+version: 0.1.0-dev.1
+homepage: https://yardenah.com/
+repository: https://github.com/turkananation/pqlattice
+# documentation: set when GitHub Pages or package site exists
+issue_tracker: https://github.com/turkananation/pqlattice/issues
+topics:
+  - cryptography
+  - post-quantum
+  - lattice
+  - ntt
+  - security
+
+environment:
+  sdk: ^3.13.0
+
+# Runtime: pure Dart only. Optional future: zeroize for secret coefficient
+# containers — keep as a deliberate, versioned dependency when introduced.
+# No FFI. No platform channels.
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6
