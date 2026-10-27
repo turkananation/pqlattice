@@ -43,7 +43,7 @@ Further: [Architecture](doc/ARCHITECTURE.md) · [Agent brief](doc/AGENT_BRIEF.md
 | Ring presets (ML-KEM, ML-DSA, FN-DSA-512/1024) | **In place** |
 | `ModQ`, schoolbook oracle, Poly / PolyVec / PolyMat | **Usable** (schoolbook real; others structural) |
 | Barrett params / reduce | **Ready** for 3329 / 12289 / 8380417 |
-| Montgomery | **Deferred** (fail-closed) |
+| Montgomery | **Ready** for 3329 / 12289 / 8380417; opt-in via `montgomeryParams`; not default |
 | NTT / iNTT | **Real** for ML-KEM, ML-DSA, FN-DSA-512/1024; L2 roundtrip + L3 basemul-vs-schoolbook + linearity green for all profiles; in-place APIs |
 | `Basemul.mlKemPairs` | **Implemented** (fused Barrett) |
 | `Basemul.pointwise` | **Implemented** (coeff-wise; for complete-style NTT) |
@@ -75,7 +75,7 @@ FFT, Gaussian sampling, or full FN-DSA (see [FN_DSA_MATH.md](doc/FN_DSA_MATH.md)
 
 | Area | Types | Notes |
 | ---- | ----- | ----- |
-| Modular arithmetic | `ModQ`, `BarrettParams`, `MontgomeryParams` | `%` reference; Barrett primary target; Montgomery deferred |
+| Modular arithmetic | `ModQ`, `BarrettParams`, `MontgomeryParams` | `%` reference; Barrett primary target; Montgomery ready, opt-in |
 | Polynomials | `Poly`, `PolyOps`, `PolyVec`, `PolyMat` | Dense coeffs; vectors/matrices for scheme-facing layouts |
 | Schoolbook oracle | `RingMul` | Negacyclic product for tests / parity |
 | NTT | `NttParams`, `NttEngine` | Per-profile factories; vector forward/inverse helpers |

@@ -153,25 +153,60 @@ class BenchmarkResult {
   /// TSV header line for all benchmark results.
   static String tsvHeader() {
     return [
-      'suite', 'operation', 'profile', 'q', 'n', 'kernelMode',
-      'reduceStrategy', 'layout', 'domain', 'buildMode',
-      'iterationsPerRound', 'rounds', 'warmupIterations',
-      'meanNs', 'medianNs', 'minNs', 'maxNs', 'stdDevNs', 'rstdPct',
-      'sink', 'sdkVersion', 'os', 'cpuCount', 'gitSha',
+      'suite',
+      'operation',
+      'profile',
+      'q',
+      'n',
+      'kernelMode',
+      'reduceStrategy',
+      'layout',
+      'domain',
+      'buildMode',
+      'iterationsPerRound',
+      'rounds',
+      'warmupIterations',
+      'meanNs',
+      'medianNs',
+      'minNs',
+      'maxNs',
+      'stdDevNs',
+      'rstdPct',
+      'sink',
+      'sdkVersion',
+      'os',
+      'cpuCount',
+      'gitSha',
     ].join('\t');
   }
 
   /// TSV row for this result.
   String toTsv() {
     return [
-      suite, operation, profile, q.toString(), n.toString(), kernelMode,
-      reduceStrategy, layout, domain, buildMode,
-      iterationsPerRound.toString(), rounds.toString(),
+      suite,
+      operation,
+      profile,
+      q.toString(),
+      n.toString(),
+      kernelMode,
+      reduceStrategy,
+      layout,
+      domain,
+      buildMode,
+      iterationsPerRound.toString(),
+      rounds.toString(),
       warmupIterations.toString(),
-      meanNs.toStringAsFixed(3), medianNs.toStringAsFixed(3),
-      minNs.toStringAsFixed(3), maxNs.toStringAsFixed(3),
-      stdDevNs.toStringAsFixed(3), rstdPct.toStringAsFixed(3),
-      sink.toString(), sdkVersion, os, cpuCount.toString(), gitSha,
+      meanNs.toStringAsFixed(3),
+      medianNs.toStringAsFixed(3),
+      minNs.toStringAsFixed(3),
+      maxNs.toStringAsFixed(3),
+      stdDevNs.toStringAsFixed(3),
+      rstdPct.toStringAsFixed(3),
+      sink.toString(),
+      sdkVersion,
+      os,
+      cpuCount.toString(),
+      gitSha,
     ].join('\t');
   }
 }
@@ -196,8 +231,11 @@ class BenchmarkContext {
     final cpus = Platform.numberOfProcessors;
     String? sha;
     try {
-      final result = Process.runSync('git', ['rev-parse', '--short', 'HEAD'],
-          workingDirectory: Directory.current.path);
+      final result = Process.runSync('git', [
+        'rev-parse',
+        '--short',
+        'HEAD',
+      ], workingDirectory: Directory.current.path);
       if (result.exitCode == 0) {
         sha = result.stdout.trim();
       }
@@ -240,8 +278,12 @@ int drainBenchmarkSink() {
 ///
 /// [observe] is called after each timed iteration with a value derived
 /// from the result, preventing DSE.
-double timedRegion(void Function() fn, int iterations, int warmup,
-    void Function(int) observe) {
+double timedRegion(
+  void Function() fn,
+  int iterations,
+  int warmup,
+  void Function(int) observe,
+) {
   // Warm-up: JIT compilation, optimizer settling, table touches.
   for (var i = 0; i < warmup; i++) {
     fn();

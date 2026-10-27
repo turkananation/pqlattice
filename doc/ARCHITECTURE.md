@@ -17,7 +17,7 @@ pqlattice/
       mod/
         mod_q.dart              # reduce, freeze, csubq, Barrett/Montgomery entry
         barrett_params.dart     # Barrett μ — default accel for q=3329
-        montgomery_params.dart  # deferred Montgomery domain
+        montgomery_params.dart  # Montgomery domain — ready, opt-in via NttEngine
       poly/
         poly.dart
         poly_ops.dart

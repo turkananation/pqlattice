@@ -22,7 +22,9 @@ import 'basemul_benchmarks.dart';
 import 'benchmark_harness.dart';
 import 'ntt_benchmarks.dart';
 import 'pipeline_benchmarks.dart';
+import 'polyvec_benchmarks.dart';
 import 'reduce_benchmarks.dart';
+import 'schoolbook_benchmarks.dart';
 import 'simd_parity_benchmarks.dart';
 
 /// Determines build mode from how this executable was launched.
@@ -88,6 +90,26 @@ void main(List<String> args) {
   } catch (e, st) {
     errorOccurred = true;
     stderr.writeln('pipeline benchmarks failed: $e\n$st');
+  }
+
+  try {
+    final polyvec = runPolyVecBenchmarks(ctx: ctx, buildMode: buildMode);
+    for (final r in polyvec) {
+      print(r.toTsv());
+    }
+  } catch (e, st) {
+    errorOccurred = true;
+    stderr.writeln('polyvec benchmarks failed: $e\n$st');
+  }
+
+  try {
+    final schoolbook = runSchoolbookBenchmarks(ctx: ctx, buildMode: buildMode);
+    for (final r in schoolbook) {
+      print(r.toTsv());
+    }
+  } catch (e, st) {
+    errorOccurred = true;
+    stderr.writeln('schoolbook benchmarks failed: $e\n$st');
   }
 
   try {

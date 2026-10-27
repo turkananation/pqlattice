@@ -36,10 +36,12 @@ List<BenchmarkResult> runPipelineBenchmarks({
 
     // ── Montgomery pipeline ──
     if (mont.isReady) {
-      results.add(_benchPipelineAllocMontgomery(ring, name, mont, ctx,
-          buildMode));
-      results.add(_benchPipelineInPlaceMontgomery(ring, name, mont, ctx,
-          buildMode));
+      results.add(
+        _benchPipelineAllocMontgomery(ring, name, mont, ctx, buildMode),
+      );
+      results.add(
+        _benchPipelineInPlaceMontgomery(ring, name, mont, ctx, buildMode),
+      );
     }
   }
 
@@ -50,7 +52,11 @@ List<BenchmarkResult> runPipelineBenchmarks({
 // ── Private helpers ──────────────────────────────────────────────────
 
 BenchmarkResult _benchPipelineAllocPlain(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final engine = NttEngine(ring);
   final a = benchPoly(ring, 0x1753);
   final b = benchPoly(ring, 0xBEEF);
@@ -59,10 +65,8 @@ BenchmarkResult _benchPipelineAllocPlain(
   final ns = measureRounds(
     () {
       final cHat = ring.q == 3329 && ring.n == 256
-          ? Basemul.mlKemPairs(
-              engine.forward(a), engine.forward(b), ring)
-          : Basemul.pointwise(
-              engine.forward(a), engine.forward(b), ring);
+          ? Basemul.mlKemPairs(engine.forward(a), engine.forward(b), ring)
+          : Basemul.pointwise(engine.forward(a), engine.forward(b), ring);
       final c = engine.inverse(cHat);
       blackHole += c.coeffs[0];
       observeInt(blackHole);
@@ -97,7 +101,11 @@ BenchmarkResult _benchPipelineAllocPlain(
 }
 
 BenchmarkResult _benchPipelineInPlacePlain(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   var blackHole = 0;
 
   final ns = measureRounds(
@@ -148,8 +156,12 @@ BenchmarkResult _benchPipelineInPlacePlain(
 // ── Montgomery pipeline ─────────────────────────────────────────────
 
 BenchmarkResult _benchPipelineAllocMontgomery(
-    RingParams ring, String name, MontgomeryParams mont,
-    BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  MontgomeryParams mont,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final engine = NttEngine(ring, montgomeryParams: mont);
   final a = benchPoly(ring, 0x1753);
   final b = benchPoly(ring, 0xBEEF);
@@ -159,9 +171,16 @@ BenchmarkResult _benchPipelineAllocMontgomery(
     () {
       final cHat = ring.q == 3329 && ring.n == 256
           ? Basemul.mlKemPairsMontgomery(
-              engine.forward(a), engine.forward(b), mont)
+              engine.forward(a),
+              engine.forward(b),
+              mont,
+            )
           : Basemul.pointwiseMontgomery(
-              engine.forward(a), engine.forward(b), ring, mont);
+              engine.forward(a),
+              engine.forward(b),
+              ring,
+              mont,
+            );
       final c = engine.inverse(cHat);
       blackHole += c.coeffs[0];
       observeInt(blackHole);
@@ -196,8 +215,12 @@ BenchmarkResult _benchPipelineAllocMontgomery(
 }
 
 BenchmarkResult _benchPipelineInPlaceMontgomery(
-    RingParams ring, String name, MontgomeryParams mont,
-    BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  MontgomeryParams mont,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   var blackHole = 0;
 
   final ns = measureRounds(

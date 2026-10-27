@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Minimum SDK constraint raised to `^3.13.0` (current stable line; see `doc/SDK_CONSTRAINTS.md`).
+- Montgomery status updated from "deferred" to "ready, opt-in" across README, API.md, ARCHITECTURE.md (MontgomeryParams ready for 3329/12289/8380417; opt-in via `NttEngine(montgomeryParams:)`; not default).
+- Benchmark suite added under `test/benchmarks/`: dependency-free harness with DSE-defeating sink, warm-up + 5 rounds + median, full context per row (SDK, OS, CPU, buildMode, profile, gitSha). Suites: ntt, basemul, reduce, pipeline, simd_parity, polyvec, schoolbook. Entry point `benchmarks_all.dart` emits TSV.
+- BENCHMARKS.md §7: harness design rules, variation matrix, missing benchmarks (pqcrypto side-by-side, JIT vs AOT variance, memory profiling), honest limits; done benchmarks listed (Barrett vs `%`, PolyVec/PolyMat, schoolbook, Montgomery vs Barrett pipeline).
 
 ### Claim boundary
 

@@ -30,10 +30,12 @@ List<BenchmarkResult> runBasemulBenchmarks({
     results.add(_benchPointwiseAlloc(ring, name, ctx, buildMode));
     results.add(_benchPointwiseInPlace(ring, name, ctx, buildMode));
     if (mont.isReady) {
-      results.add(_benchPointwiseMontgomeryAlloc(ring, name, mont, ctx,
-          buildMode));
-      results.add(_benchPointwiseMontgomeryInPlace(ring, name, mont, ctx,
-          buildMode));
+      results.add(
+        _benchPointwiseMontgomeryAlloc(ring, name, mont, ctx, buildMode),
+      );
+      results.add(
+        _benchPointwiseMontgomeryInPlace(ring, name, mont, ctx, buildMode),
+      );
     }
   }
 
@@ -44,8 +46,9 @@ List<BenchmarkResult> runBasemulBenchmarks({
   results.add(_benchMlKemPairsInPlace(kem, ctx, buildMode));
   if (kemMont.isReady) {
     results.add(_benchMlKemPairsMontgomeryAlloc(kem, kemMont, ctx, buildMode));
-    results.add(_benchMlKemPairsMontgomeryInPlace(kem, kemMont, ctx,
-        buildMode));
+    results.add(
+      _benchMlKemPairsMontgomeryInPlace(kem, kemMont, ctx, buildMode),
+    );
   }
 
   drainBenchmarkSink();
@@ -55,7 +58,11 @@ List<BenchmarkResult> runBasemulBenchmarks({
 // ── Pointwise (complete-style NTT) ──────────────────────────────────
 
 BenchmarkResult _benchPointwiseAlloc(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final a = benchPoly(ring, 0x1753);
   final b = benchPoly(ring, 0xBEEF);
   var blackHole = 0;
@@ -96,7 +103,11 @@ BenchmarkResult _benchPointwiseAlloc(
 }
 
 BenchmarkResult _benchPointwiseInPlace(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   var blackHole = 0;
 
   final ns = measureRounds(
@@ -140,8 +151,12 @@ BenchmarkResult _benchPointwiseInPlace(
 // ── Pointwise Montgomery ────────────────────────────────────────────
 
 BenchmarkResult _benchPointwiseMontgomeryAlloc(
-    RingParams ring, String name, MontgomeryParams mont,
-    BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  MontgomeryParams mont,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final a = benchPoly(ring, 0x1753);
   final b = benchPoly(ring, 0xBEEF);
   // Convert inputs to Montgomery domain once (setup).
@@ -189,8 +204,12 @@ BenchmarkResult _benchPointwiseMontgomeryAlloc(
 }
 
 BenchmarkResult _benchPointwiseMontgomeryInPlace(
-    RingParams ring, String name, MontgomeryParams mont,
-    BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  MontgomeryParams mont,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   var blackHole = 0;
 
   final ns = measureRounds(
@@ -240,7 +259,10 @@ BenchmarkResult _benchPointwiseMontgomeryInPlace(
 // ── ML-KEM pair basemul (incomplete NTT) ────────────────────────────
 
 BenchmarkResult _benchMlKemPairsAlloc(
-    RingParams ring, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final a = benchPoly(ring, 0x1753);
   final b = benchPoly(ring, 0xBEEF);
   var blackHole = 0;
@@ -281,7 +303,10 @@ BenchmarkResult _benchMlKemPairsAlloc(
 }
 
 BenchmarkResult _benchMlKemPairsInPlace(
-    RingParams ring, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   var blackHole = 0;
 
   final ns = measureRounds(
@@ -325,8 +350,11 @@ BenchmarkResult _benchMlKemPairsInPlace(
 // ── ML-KEM pair basemul Montgomery ──────────────────────────────────
 
 BenchmarkResult _benchMlKemPairsMontgomeryAlloc(
-    RingParams ring, MontgomeryParams mont, BenchmarkContext ctx,
-    String buildMode) {
+  RingParams ring,
+  MontgomeryParams mont,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final a = benchPoly(ring, 0x1753);
   final b = benchPoly(ring, 0xBEEF);
   // Convert to Montgomery domain once (setup).
@@ -374,8 +402,11 @@ BenchmarkResult _benchMlKemPairsMontgomeryAlloc(
 }
 
 BenchmarkResult _benchMlKemPairsMontgomeryInPlace(
-    RingParams ring, MontgomeryParams mont, BenchmarkContext ctx,
-    String buildMode) {
+  RingParams ring,
+  MontgomeryParams mont,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   var blackHole = 0;
 
   final ns = measureRounds(

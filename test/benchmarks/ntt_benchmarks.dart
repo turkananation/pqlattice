@@ -40,10 +40,12 @@ List<BenchmarkResult> runNttBenchmarks({
 
     // ── Montgomery-domain variants (opt-in, not default) ──
     if (mont.isReady) {
-      results.add(_benchNttMontgomeryForwardAlloc(ring, name, mont, ctx,
-          buildMode));
-      results.add(_benchNttMontgomeryRoundtripAlloc(ring, name, mont, ctx,
-          buildMode));
+      results.add(
+        _benchNttMontgomeryForwardAlloc(ring, name, mont, ctx, buildMode),
+      );
+      results.add(
+        _benchNttMontgomeryRoundtripAlloc(ring, name, mont, ctx, buildMode),
+      );
     }
   }
 
@@ -54,7 +56,11 @@ List<BenchmarkResult> runNttBenchmarks({
 // ── Private helpers ──────────────────────────────────────────────────
 
 BenchmarkResult _benchNttForwardAlloc(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final engine = NttEngine(ring);
   final a = benchPoly(ring, 0x1753);
   var blackHole = 0;
@@ -95,7 +101,11 @@ BenchmarkResult _benchNttForwardAlloc(
 }
 
 BenchmarkResult _benchNttInverseAlloc(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final engine = NttEngine(ring);
   final a = benchPoly(ring, 0xBEEF);
   final h = engine.forward(a); // setup: produce NTT-domain input
@@ -137,7 +147,11 @@ BenchmarkResult _benchNttInverseAlloc(
 }
 
 BenchmarkResult _benchNttRoundtripAlloc(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final engine = NttEngine(ring);
   final a = benchPoly(ring, 0xCAFE);
   var blackHole = 0;
@@ -178,7 +192,11 @@ BenchmarkResult _benchNttRoundtripAlloc(
 }
 
 BenchmarkResult _benchNttForwardInPlace(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final engine = NttEngine(ring);
   var blackHole = 0;
 
@@ -219,7 +237,11 @@ BenchmarkResult _benchNttForwardInPlace(
 }
 
 BenchmarkResult _benchNttInverseInPlace(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final engine = NttEngine(ring);
   var blackHole = 0;
 
@@ -261,8 +283,12 @@ BenchmarkResult _benchNttInverseInPlace(
 }
 
 BenchmarkResult _benchNttMontgomeryForwardAlloc(
-    RingParams ring, String name, MontgomeryParams mont,
-    BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  MontgomeryParams mont,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final engine = NttEngine(ring, montgomeryParams: mont);
   final a = benchPoly(ring, 0x5EED);
   var blackHole = 0;
@@ -303,8 +329,12 @@ BenchmarkResult _benchNttMontgomeryForwardAlloc(
 }
 
 BenchmarkResult _benchNttMontgomeryRoundtripAlloc(
-    RingParams ring, String name, MontgomeryParams mont,
-    BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  MontgomeryParams mont,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final engine = NttEngine(ring, montgomeryParams: mont);
   final a = benchPoly(ring, 0xC0FFEE);
   var blackHole = 0;

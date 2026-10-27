@@ -46,12 +46,18 @@ List<BenchmarkResult> runReduceBenchmarks({
 // ── Barrett reduction ────────────────────────────────────────────────
 
 BenchmarkResult _benchReduceBarrett(
-    int q, String name, BarrettParams barrett, BenchmarkContext ctx,
-    String buildMode) {
+  int q,
+  String name,
+  BarrettParams barrett,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final rnd = Random(q);
   // Pre-generate products outside timing.
-  final products = List<int>.generate(kDefaultIterations * kDefaultRounds,
-      (_) => rnd.nextInt(q) * rnd.nextInt(q));
+  final products = List<int>.generate(
+    kDefaultIterations * kDefaultRounds,
+    (_) => rnd.nextInt(q) * rnd.nextInt(q),
+  );
   var idx = 0;
   var blackHole = 0;
 
@@ -96,10 +102,16 @@ BenchmarkResult _benchReduceBarrett(
 // ── % reference reduction ────────────────────────────────────────────
 
 BenchmarkResult _benchReducePercent(
-    int q, String name, BenchmarkContext ctx, String buildMode) {
+  int q,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final rnd = Random(q);
-  final products = List<int>.generate(kDefaultIterations * kDefaultRounds,
-      (_) => rnd.nextInt(q) * rnd.nextInt(q));
+  final products = List<int>.generate(
+    kDefaultIterations * kDefaultRounds,
+    (_) => rnd.nextInt(q) * rnd.nextInt(q),
+  );
   var idx = 0;
   var blackHole = 0;
 
@@ -144,12 +156,18 @@ BenchmarkResult _benchReducePercent(
 // ── Montgomery montMul ───────────────────────────────────────────────
 
 BenchmarkResult _benchMontMul(
-    int q, String name, MontgomeryParams mont, BenchmarkContext ctx,
-    String buildMode) {
+  int q,
+  String name,
+  MontgomeryParams mont,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final rnd = Random(q);
   // Pre-generate Montgomery-domain operands outside timing.
-  final ops = List<int>.generate(kDefaultIterations * kDefaultRounds * 2,
-      (_) => ModQ.toMont(rnd.nextInt(q), mont));
+  final ops = List<int>.generate(
+    kDefaultIterations * kDefaultRounds * 2,
+    (_) => ModQ.toMont(rnd.nextInt(q), mont),
+  );
   var idx = 0;
   var blackHole = 0;
 
@@ -194,13 +212,19 @@ BenchmarkResult _benchMontMul(
 // ── Montgomery montReduce ────────────────────────────────────────────
 
 BenchmarkResult _benchMontReduce(
-    int q, String name, MontgomeryParams mont, BenchmarkContext ctx,
-    String buildMode) {
+  int q,
+  String name,
+  MontgomeryParams mont,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final rnd = Random(q);
   final bound = q * mont.r;
   // Pre-generate inputs within [0, q*R) outside timing.
-  final inputs = List<int>.generate(kDefaultIterations * kDefaultRounds,
-      (_) => rnd.nextInt(bound));
+  final inputs = List<int>.generate(
+    kDefaultIterations * kDefaultRounds,
+    (_) => rnd.nextInt(bound),
+  );
   var idx = 0;
   var blackHole = 0;
 

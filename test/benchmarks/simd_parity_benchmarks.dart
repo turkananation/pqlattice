@@ -37,7 +37,11 @@ List<BenchmarkResult> runSimdParityBenchmarks({
 }
 
 BenchmarkResult _benchScalarPointwise(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final rnd = Random(0x1753 ^ ring.q);
   final a = Poly.fromCoeffs(
     ring,
@@ -85,7 +89,11 @@ BenchmarkResult _benchScalarPointwise(
 }
 
 BenchmarkResult _benchSimdPointwise(
-    RingParams ring, String name, BenchmarkContext ctx, String buildMode) {
+  RingParams ring,
+  String name,
+  BenchmarkContext ctx,
+  String buildMode,
+) {
   final rnd = Random(0xBEEF ^ ring.q);
   final a = Poly.fromCoeffs(
     ring,

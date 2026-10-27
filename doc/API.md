@@ -50,8 +50,8 @@ Custom rings: `RingParams(q: ..., n: ..., name: ...)`.
 | `ModQ.freeze` / `csubq` / `center` | Scheme-facing helpers |
 | `ModQ.reduceBarrett(a, BarrettParams)` | Barrett when `params.isReady`; else `%` |
 | `BarrettParams.forQ(q)` / `BarrettParams.mlKem` | **Ready** for \(q=3329\) (\(\mu=5039\), shift 24); other \(q\) scaffold |
-| `MontgomeryParams.forQ(q)` | **Deferred**; `isReady == false` |
-| `ModQ.montMul` / `toMont` / `fromMont` | Fail-closed until Montgomery ready |
+| `MontgomeryParams.forQ(q)` | **Ready** for \(q=3329\), \(q=12289\), \(q=8380417\); `isReady == true` |
+| `ModQ.montMul` / `toMont` / `fromMont` | Montgomery domain ops; fail-closed for unknown moduli |
 
 ---
 
