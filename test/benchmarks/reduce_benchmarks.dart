@@ -220,10 +220,14 @@ BenchmarkResult _benchMontReduce(
 ) {
   final rnd = Random(q);
   final bound = q * mont.r;
-  // Pre-generate inputs within [0, q*R) outside timing.
+  // nextInt is limited to 2^32; cap input generation accordingly.
+  // montReduce's theoretical bound is q*R, but 2^31-1 is sufficient for
+  // benchmarking purposes across all profiles.
+  final cap = bound > 0x7fffffff ? 0x7fffffff : bound;
+  // Pre-generate inputs within [0, cap) outside timing.
   final inputs = List<int>.generate(
     kDefaultIterations * kDefaultRounds,
-    (_) => rnd.nextInt(bound),
+    (_) => rnd.nextInt(cap),
   );
   var idx = 0;
   var blackHole = 0;
