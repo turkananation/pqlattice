@@ -11,12 +11,12 @@
 /// is checked out as a sibling repo on the same machine:
 ///
 ///   # Temporarily add pqcrypto as a path dependency:
-+   #   dev_dependencies:
-+   #     pqcrypto:
-+   #       path: ../pqcrypto
-+   #   dart pub get
-+   #
-+   #   dart run test/benchmarks/pqcrypto_side_by_side.dart
+///   #   dev_dependencies:
+///   #     pqcrypto:
+///   #       path: ../pqcrypto
+///   #   dart pub get
+///   #
+///   #   dart run test/benchmarks/pqcrypto_side_by_side.dart
 ///
 /// On machines where pqcrypto is not available, this file is simply not run.
 library;
@@ -165,7 +165,7 @@ BenchmarkResult _benchPqcryptoPipeline(
       final pBh = pqcrypto.Poly.ntt(pb);
       final pCh = pqcrypto.Poly.baseMul(pAh, pBh);
       final pC = pqcrypto.Poly.invNtt(pCh);
-      blackHole += pC.coeffs[0];
+      blackHole += pC.coeffs[0].toInt();
       observeInt(blackHole);
     },
     iterations: kDefaultIterations,
@@ -210,7 +210,7 @@ BenchmarkResult _benchPqcryptoNtt(
     () {
       final pa = pqcrypto.Poly(a.coeffs);
       final pAh = pqcrypto.Poly.ntt(pa);
-      blackHole += pAh.coeffs[0];
+      blackHole += pAh.coeffs[0].toInt();
       observeInt(blackHole);
     },
     iterations: kDefaultIterations,
@@ -255,7 +255,7 @@ BenchmarkResult _benchPqcryptoBaseMul(
   final (ns, memoryDelta) = measureRounds(
     () {
       final pCh = pqcrypto.Poly.baseMul(aHat, bHat);
-      blackHole += pCh.coeffs[0];
+      blackHole += pCh.coeffs[0].toInt();
       observeInt(blackHole);
     },
     iterations: kDefaultIterations,
@@ -438,8 +438,8 @@ final RingParams ring = RingParams.mlKem;
 /// pubspec.yaml:
 ///
 ///   dev_dependencies:
-+     pqcrypto:
-+       path: ../pqcrypto
+///     pqcrypto:
+///       path: ../pqcrypto
 ///
 /// Then run: `dart run test/benchmarks/pqcrypto_side_by_side.dart`
 ///
