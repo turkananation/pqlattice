@@ -5,7 +5,3 @@ linter:
     public_member_api_docs: false
     # Enable stricter docs before publish:
     # public_member_api_docs: true
-
-analyzer:
-  exclude:
-    - test/benchmarks/pqcrypto_side_by_side.dart
