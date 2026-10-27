@@ -1,4 +1,4 @@
-/// pqcrypto side-by-side benchmark and correctness test.
+/// pqcrypto side-by-side benchmark and correctness test (LOCAL ONLY).
 ///
 /// This is **the** interop test: it runs identical random polynomials through
 /// pqcrypto's internal `Poly.ntt` / `Poly.baseMul` / `Poly.invNtt` and
@@ -6,10 +6,22 @@
 /// asserts **bit-identical** results. It also benchmarks both pipelines
 /// side-by-side so speed comparisons are evidence-based, not claimed.
 ///
-/// Requires `pqcrypto` as a dev dependency (path: ../pqcrypto). On machines
-/// where pqcrypto is not available, this suite is skipped.
+/// This file is **not** imported by benchmarks_all.dart and is excluded from
+/// CI analysis (see analysis_options.yaml). It is run manually when pqcrypto
+/// is checked out as a sibling repo on the same machine:
+///
+///   # Temporarily add pqcrypto as a path dependency:
++   #   dev_dependencies:
++   #     pqcrypto:
++   #       path: ../pqcrypto
++   #   dart pub get
++   #
++   #   dart run test/benchmarks/pqcrypto_side_by_side.dart
+///
+/// On machines where pqcrypto is not available, this file is simply not run.
 library;
 
+import 'dart:io';
 import 'dart:math';
 
 import 'package:pqcrypto/src/algos/kyber/poly.dart' as pqcrypto;
@@ -419,3 +431,51 @@ BenchmarkResult _benchPqlatticeMlKemPairs(
 
 /// Ring used for ML-KEM side-by-side (q=3329, n=256).
 final RingParams ring = RingParams.mlKem;
+
+/// Standalone entry point for local pqcrypto side-by-side benchmarking.
+///
+/// Requires `pqcrypto` to be temporarily added as a path dependency in
+/// pubspec.yaml:
+///
+///   dev_dependencies:
++     pqcrypto:
++       path: ../pqcrypto
+///
+/// Then run: `dart run test/benchmarks/pqcrypto_side_by_side.dart`
+///
+/// This file is excluded from CI analysis (see analysis_options.yaml) and is
+/// NOT imported by benchmarks_all.dart. It is run manually when pqcrypto is
+/// checked out as a sibling repo on the same machine.
+void main() {
+  final ctx = BenchmarkContext.capture();
+  final (correctnessResults, benchmarkResults) = runPqcryptoSideBySide(
+    ctx: ctx,
+    buildMode: _detectBuildMode(),
+  );
+
+  print('PQCRYPTO SIDE-BY-SIDE CORRECTNESS:');
+  for (final r in correctnessResults) {
+    print(
+      '  trial=${r.trial}: bitIdentical=${r.bitIdentical} '
+      '(pqcrypto=${r.pqcryptoCoeff0}, pqlattice=${r.pqlatticeCoeff0})',
+    );
+  }
+
+  print('');
+  print('PQCRYPTO SIDE-BY-SIDE BENCHMARKS (TSV):');
+  print(BenchmarkResult.tsvHeader());
+  for (final r in benchmarkResults) {
+    print(r.toTsv());
+  }
+}
+
+/// Determines build mode from how this executable was launched.
+String _detectBuildMode() {
+  final script = Platform.script.toString();
+  if (script.endsWith('.exe') ||
+      script.contains('snapshot') ||
+      !script.endsWith('.dart')) {
+    return 'aot';
+  }
+  return 'jit';
+}
