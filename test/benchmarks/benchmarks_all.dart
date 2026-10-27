@@ -33,6 +33,7 @@ import 'polyvec_benchmarks.dart';
 import 'reduce_benchmarks.dart';
 import 'schoolbook_benchmarks.dart';
 import 'simd_parity_benchmarks.dart';
+import 'pqcrypto_side_by_side.dart';
 
 /// Determines build mode from how this executable was launched.
 ///
@@ -152,6 +153,32 @@ void main(List<String> args) {
   } catch (e, st) {
     errorOccurred = true;
     stderr.writeln('simd benchmarks failed: $e\n$st');
+  }
+
+  // pqcrypto side-by-side: correctness + benchmarks.
+  // This is the interop test — pqcrypto is a path dev dependency and only
+  // available when the sibling repo is checked out on the same machine.
+  try {
+    final (correctnessResults, pqcBenchmarks) = runPqcryptoSideBySide(
+      ctx: ctx,
+      buildMode: buildMode,
+    );
+    for (final r in correctnessResults) {
+      if (!r.bitIdentical) {
+        errorOccurred = true;
+        stderr.writeln(
+          'PQCRYPTO CORRECTNESS FAILURE trial=${r.trial}: '
+          'pqcrypto coeff[0]=${r.pqcryptoCoeff0}, '
+          'pqlattice coeff[0]=${r.pqlatticeCoeff0}',
+        );
+      }
+    }
+    for (final r in pqcBenchmarks) {
+      print(r.toTsv());
+    }
+  } catch (e, st) {
+    errorOccurred = true;
+    stderr.writeln('pqcrypto side-by-side failed: $e\n$st');
   }
 
   // Capture RSS after all suites and print a memory summary row.

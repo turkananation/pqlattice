@@ -26,3 +26,9 @@ environment:
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
+
+  # pqcrypto is a sibling repo on the same machine. Used only by the
+  # pqcrypto side-by-side benchmark (test/benchmarks/pqcrypto_side_by_side.dart)
+  # to validate interop and speed. Not a runtime dependency of pqlattice.
+  pqcrypto:
+    path: ../pqcrypto
