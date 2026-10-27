@@ -192,14 +192,14 @@ final class NttEngine {
       for (var start = 0; start < 256; start += 2 * len) {
         final zeta = zetas[k++];
         for (var j = start; j < start + len; j++) {
-          final f_j = f[j];
-          final f_jl = f[j + len];
-          final t = _mulBarrettMlKem(zeta, f_jl);
+          final fj = f[j];
+          final fjl = f[j + len];
+          final t = _mulBarrettMlKem(zeta, fjl);
           // f[j + len] = f[j] - t mod q
-          final diff = f_j - t;
+          final diff = fj - t;
           f[j + len] = diff < 0 ? diff + q : diff;
           // f[j] = f[j] + t mod q
-          final sum = f_j + t;
+          final sum = fj + t;
           f[j] = sum >= q ? sum - q : sum;
         }
       }
@@ -214,13 +214,13 @@ final class NttEngine {
       for (var start = 0; start < 256; start += 2 * len) {
         final zeta = zetas[k--];
         for (var j = start; j < start + len; j++) {
-          final f_j = f[j];
-          final f_jl = f[j + len];
+          final fj = f[j];
+          final fjl = f[j + len];
           // f[j] = f[j] + f[j + len] mod q
-          final sum = f_j + f_jl;
+          final sum = fj + fjl;
           f[j] = sum >= q ? sum - q : sum;
-          // f[j + len] = zeta * (f[j + len] - f_j) mod q
-          final diff = f_jl - f_j;
+          // f[j + len] = zeta * (f[j + len] - fj) mod q
+          final diff = fjl - fj;
           final reducedDiff = diff < 0 ? diff + q : diff;
           final t = _mulBarrettMlKem(zeta, reducedDiff);
           f[j + len] = t;
