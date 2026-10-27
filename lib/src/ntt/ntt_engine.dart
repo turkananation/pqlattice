@@ -188,33 +188,21 @@ final class NttEngine {
     final q = ring.q;
     final zetas = params.zetas;
     var k = 1;
-    var layer = 0;
     for (var len = 128; len >= 2; len >>= 1) {
-      layer++;
       for (var start = 0; start < 256; start += 2 * len) {
         final zeta = zetas[k++];
         for (var j = start; j < start + len; j++) {
-          final fj = f[j];
-          final fjl = f[j + len];
-          final t = _mulBarrettMlKemLazy(zeta, fjl, q);
-          // f[j + len] = fj - t mod q
-          final diff = fj - t;
+          final f_j = f[j];
+          final f_jl = f[j + len];
+          final t = _mulBarrettMlKem(zeta, f_jl);
+          // f[j + len] = f[j] - t mod q
+          final diff = f_j - t;
           f[j + len] = diff < 0 ? diff + q : diff;
-          // fj = fj + t mod q
-          final sum = fj + t;
+          // f[j] = f[j] + t mod q
+          final sum = f_j + t;
           f[j] = sum >= q ? sum - q : sum;
         }
       }
-      // Lazy reduction every 2 layers: after layers 2, 4, 6
-      if (layer % 2 == 0) {
-        for (var i = 0; i < 256; i++) {
-          f[i] = _reduceBarrettMlKemLazy(f[i], q);
-        }
-      }
-    }
-    // Final reduce after layer 7
-    for (var i = 0; i < 256; i++) {
-      f[i] = _reduceBarrettMlKemLazy(f[i], q);
     }
   }
 
@@ -222,33 +210,26 @@ final class NttEngine {
     final q = ring.q;
     final zetas = params.zetas;
     var k = 127;
-    var layer = 0;
     for (var len = 2; len <= 128; len <<= 1) {
-      layer++;
       for (var start = 0; start < 256; start += 2 * len) {
         final zeta = zetas[k--];
         for (var j = start; j < start + len; j++) {
-          final fj = f[j];
-          final fjl = f[j + len];
-          // fj = fj + fjl mod q
-          final sum = fj + fjl;
+          final f_j = f[j];
+          final f_jl = f[j + len];
+          // f[j] = f[j] + f[j + len] mod q
+          final sum = f_j + f_jl;
           f[j] = sum >= q ? sum - q : sum;
-          // fjl = zeta * (fjl - fj) mod q
-          final diff = fjl - fj;
+          // f[j + len] = zeta * (f[j + len] - f_j) mod q
+          final diff = f_jl - f_j;
           final reducedDiff = diff < 0 ? diff + q : diff;
-          final t = _mulBarrettMlKemLazy(zeta, reducedDiff, q);
+          final t = _mulBarrettMlKem(zeta, reducedDiff);
           f[j + len] = t;
-        }
-      }
-      if (layer % 2 == 0) {
-        for (var i = 0; i < 256; i++) {
-          f[i] = _reduceBarrettMlKemLazy(f[i], q);
         }
       }
     }
     final inv = params.invNScale;
     for (var i = 0; i < 256; i++) {
-      f[i] = _mulBarrettMlKemLazy(f[i], inv, q);
+      f[i] = _mulBarrettMlKem(f[i], inv);
     }
   }
 
@@ -524,35 +505,17 @@ final class NttEngine {
   }
 
   /// Barrett reduction for ML-KEM: q = 3329, mu = 5039, shift = 24.
-  /// Handles inputs in [-2q^2, 2q^2] ≈ [-2.2e7, 2.2e7] for lazy reduction.
   /// Inlined to avoid [BarrettParams] object field lookups in the hot loop.
-  static int _mulBarrettMlKemLazy(int zeta, int f, int q) {
-    // zeta in [0, q), f in [-2q^2, 2q^2], raw in [-2q^3, 2q^3] ≈ [-7.3e10, 7.3e10]
-    final raw = zeta * f;
-    var r = raw - ((raw * 5039) >> 24) * 3329;
-    // Barrett error bounded by ~q per reduction; r should be within ~[-2q, 2q]
-    if (r >= 3329) r -= 3329;
-    if (r >= 3329) r -= 3329;
-    if (r >= 3329) r -= 3329;
-    if (r >= 3329) r -= 3329;
+  /// Input bound: 0 <= a, b < q, so raw = a * b < q^2 ≈ 1.1e7, well within int.
+  static int _mulBarrettMlKem(int a, int b) {
+    final raw = a * b;
+    final quot = (raw * 5039) >> 24;
+    var r = raw - quot * 3329;
+    r = r >= 3329 ? r - 3329 : r;
+    r = r >= 3329 ? r - 3329 : r;
+    r = r >= 3329 ? r - 3329 : r;
     if (r < 0) r += 3329;
-    if (r < 0) r += 3329;
-    if (r < 0) r += 3329;
-    if (r < 0) r += 3329;
-    return r;
-  }
-
-  /// Barrett reduce for lazy accumulation: input in [-2q^2, 2q^2].
-  static int _reduceBarrettMlKemLazy(int a, int q) {
-    var r = a - ((a * 5039) >> 24) * 3329;
-    if (r >= 3329) r -= 3329;
-    if (r >= 3329) r -= 3329;
-    if (r >= 3329) r -= 3329;
-    if (r >= 3329) r -= 3329;
-    if (r < 0) r += 3329;
-    if (r < 0) r += 3329;
-    if (r < 0) r += 3329;
-    if (r < 0) r += 3329;
+    if (r >= 3329) r %= 3329;
     return r;
   }
 
