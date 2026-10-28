@@ -1,7 +1,7 @@
 # pqlattice
 
 Pure-Dart **lattice and polynomial arithmetic** for post-quantum cryptography:
-modular reduction, polynomials over \(\mathbb{Z}_q[x]/(x^n+1)\), NTT / inverse NTT,
+modular reduction, polynomials over ℤ𝑞 [ 𝑋 ] / ( 𝑋256 +1)  NTT / inverse NTT,
 NTT-domain products, with **acceleration on by default** (Barrett, optimized NTT/basemul, SIMD when capable).
 
 ## Project signals
