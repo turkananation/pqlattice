@@ -106,13 +106,22 @@ BenchmarkResult _benchPipelineInPlacePlain(
   BenchmarkContext ctx,
   String buildMode,
 ) {
+  // Setup (doc/BENCHMARKS.md §4): engine, inputs, and buffers built once,
+  // outside the timed region. Each iteration restores both buffers via a
+  // copy write, then times only forward + in-place basemul + inverse. The
+  // basemul aliases dest == a-hat (x, x, y): safe by the documented
+  // per-index read-then-write order, kept exactly as shipped.
+  final engine = NttEngine(ring);
+  final xBase = benchPoly(ring, 0xCAFE);
+  final yBase = benchPoly(ring, 0xDEAD);
+  final x = Poly.zero(ring);
+  final y = Poly.zero(ring);
   var blackHole = 0;
 
   final (ns, _) = measureRounds(
     () {
-      final x = benchPoly(ring, 0xCAFE + blackHole);
-      final y = benchPoly(ring, 0xDEAD + blackHole);
-      final engine = NttEngine(ring);
+      x.coeffs.setAll(0, xBase.coeffs);
+      y.coeffs.setAll(0, yBase.coeffs);
       engine.forwardInPlace(x);
       engine.forwardInPlace(y);
       if (ring.q == 3329 && ring.n == 256) {

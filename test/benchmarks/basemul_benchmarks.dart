@@ -108,13 +108,16 @@ BenchmarkResult _benchPointwiseInPlace(
   BenchmarkContext ctx,
   String buildMode,
 ) {
+  // Setup (doc/BENCHMARKS.md §4): inputs and destination are built once,
+  // outside the timed region. pointwiseInPlace fully overwrites dest on
+  // every call, so the timed closure measures only the in-place op.
+  final a = benchPoly(ring, 0xCAFE);
+  final b = benchPoly(ring, 0xDEAD);
+  final c = Poly.zero(ring);
   var blackHole = 0;
 
   final (ns, _) = measureRounds(
     () {
-      final a = benchPoly(ring, 0xCAFE + blackHole);
-      final b = benchPoly(ring, 0xDEAD + blackHole);
-      final c = Poly.zero(ring);
       Basemul.pointwiseInPlace(c, a, b, ring);
       blackHole += c.coeffs[0];
       observeInt(blackHole);
@@ -210,19 +213,22 @@ BenchmarkResult _benchPointwiseMontgomeryInPlace(
   BenchmarkContext ctx,
   String buildMode,
 ) {
+  // Setup (doc/BENCHMARKS.md §4): real-domain inputs, their Montgomery
+  // conversion, and the destination are all pre-built outside the timed
+  // region; the closure measures only the in-place Montgomery op.
+  final a = benchPoly(ring, 0xCAFE);
+  final b = benchPoly(ring, 0xDEAD);
+  final aMont = Poly.zero(ring);
+  final bMont = Poly.zero(ring);
+  final c = Poly.zero(ring);
+  for (var i = 0; i < ring.n; i++) {
+    aMont.coeffs[i] = ModQ.toMont(a.coeffs[i], mont);
+    bMont.coeffs[i] = ModQ.toMont(b.coeffs[i], mont);
+  }
   var blackHole = 0;
 
   final (ns, _) = measureRounds(
     () {
-      final a = benchPoly(ring, 0xCAFE + blackHole);
-      final b = benchPoly(ring, 0xDEAD + blackHole);
-      final aMont = Poly.zero(ring);
-      final bMont = Poly.zero(ring);
-      final c = Poly.zero(ring);
-      for (var i = 0; i < ring.n; i++) {
-        aMont.coeffs[i] = ModQ.toMont(a.coeffs[i], mont);
-        bMont.coeffs[i] = ModQ.toMont(b.coeffs[i], mont);
-      }
       Basemul.pointwiseMontgomeryInPlace(c, aMont, bMont, ring, mont);
       blackHole += c.coeffs[0];
       observeInt(blackHole);
@@ -307,13 +313,15 @@ BenchmarkResult _benchMlKemPairsInPlace(
   BenchmarkContext ctx,
   String buildMode,
 ) {
+  // Setup (doc/BENCHMARKS.md §4): inputs and destination built once,
+  // outside the timed region; mlKemPairsInPlace fully overwrites dest.
+  final a = benchPoly(ring, 0xCAFE);
+  final b = benchPoly(ring, 0xDEAD);
+  final c = Poly.zero(ring);
   var blackHole = 0;
 
   final (ns, _) = measureRounds(
     () {
-      final a = benchPoly(ring, 0xCAFE + blackHole);
-      final b = benchPoly(ring, 0xDEAD + blackHole);
-      final c = Poly.zero(ring);
       Basemul.mlKemPairsInPlace(c, a, b);
       blackHole += c.coeffs[0];
       observeInt(blackHole);
@@ -407,19 +415,21 @@ BenchmarkResult _benchMlKemPairsMontgomeryInPlace(
   BenchmarkContext ctx,
   String buildMode,
 ) {
+  // Setup (doc/BENCHMARKS.md §4): real-domain inputs, their Montgomery
+  // conversion, and the destination pre-built outside the timed region.
+  final a = benchPoly(ring, 0xCAFE);
+  final b = benchPoly(ring, 0xDEAD);
+  final aMont = Poly.zero(ring);
+  final bMont = Poly.zero(ring);
+  final c = Poly.zero(ring);
+  for (var i = 0; i < ring.n; i++) {
+    aMont.coeffs[i] = ModQ.toMont(a.coeffs[i], mont);
+    bMont.coeffs[i] = ModQ.toMont(b.coeffs[i], mont);
+  }
   var blackHole = 0;
 
   final (ns, _) = measureRounds(
     () {
-      final a = benchPoly(ring, 0xCAFE + blackHole);
-      final b = benchPoly(ring, 0xDEAD + blackHole);
-      final aMont = Poly.zero(ring);
-      final bMont = Poly.zero(ring);
-      final c = Poly.zero(ring);
-      for (var i = 0; i < ring.n; i++) {
-        aMont.coeffs[i] = ModQ.toMont(a.coeffs[i], mont);
-        bMont.coeffs[i] = ModQ.toMont(b.coeffs[i], mont);
-      }
       Basemul.mlKemPairsMontgomeryInPlace(c, aMont, bMont, mont);
       blackHole += c.coeffs[0];
       observeInt(blackHole);
