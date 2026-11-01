@@ -31,6 +31,14 @@ final class NttEngine {
   /// [ModQ.toMont] on every butterfly in the inner loop.
   List<int>? _zetasMont;
 
+  /// Montgomery-form twiddles for the ML-DSA accelerated default path
+  /// (plain-domain arrangement, no input/output conversions). Independent of
+  /// the opt-in Montgomery-domain NTT twiddles above.
+  List<int>? _mlDsaZetasMont;
+
+  /// Montgomery-form \(n^{-1}\) scale for the ML-DSA accelerated default path.
+  int? _mlDsaInvScaleMont;
+
   NttEngine(
     this.ring, {
     NttParams? params,
@@ -43,6 +51,13 @@ final class NttEngine {
     _zetasMont = montgomeryParams != null && montgomeryParams.isReady
         ? _precomputeMontgomeryZetas(this.params.zetas, montgomeryParams)
         : null;
+    if (ring.q == 8380417 && this.params.hasZetas) {
+      final mont = MontgomeryParams.forQ(ring.q);
+      if (mont.isReady) {
+        _mlDsaZetasMont = _precomputeMontgomeryZetas(this.params.zetas, mont);
+        _mlDsaInvScaleMont = ModQ.toMont(this.params.invNScale, mont);
+      }
+    }
     if (ring.n != this.params.ring.n || ring.q != this.params.ring.q) {
       throw ArgumentError('NttParams ring does not match engine ring');
     }
@@ -96,9 +111,17 @@ final class NttEngine {
     } else if (ring.q == 3329 && ring.n == 256) {
       _mlKemForward(p.coeffs);
     } else if (ring.q == 8380417 && ring.n == 256) {
-      _mlDsaForward(p.coeffs);
+      if (_reference) {
+        _mlDsaForwardRef(p.coeffs);
+      } else {
+        _mlDsaForward(p.coeffs);
+      }
     } else if (ring.q == 12289 && (ring.n == 512 || ring.n == 1024)) {
-      _fnDsaForward(p.coeffs);
+      if (_reference) {
+        _fnDsaForwardRef(p.coeffs);
+      } else {
+        _fnDsaForward(p.coeffs);
+      }
     } else {
       throw StateError(
         'forward NTT not implemented for q=${ring.q}, n=${ring.n}',
@@ -117,9 +140,17 @@ final class NttEngine {
     } else if (ring.q == 3329 && ring.n == 256) {
       _mlKemInverse(p.coeffs);
     } else if (ring.q == 8380417 && ring.n == 256) {
-      _mlDsaInverse(p.coeffs);
+      if (_reference) {
+        _mlDsaInverseRef(p.coeffs);
+      } else {
+        _mlDsaInverse(p.coeffs);
+      }
     } else if (ring.q == 12289 && (ring.n == 512 || ring.n == 1024)) {
-      _fnDsaInverse(p.coeffs);
+      if (_reference) {
+        _fnDsaInverseRef(p.coeffs);
+      } else {
+        _fnDsaInverse(p.coeffs);
+      }
     } else {
       throw StateError(
         'inverse NTT not implemented for q=${ring.q}, n=${ring.n}',
@@ -233,8 +264,9 @@ final class NttEngine {
     }
   }
 
-  /// pqcrypto DilithiumNTT.ntt (FIPS 204 shape).
-  void _mlDsaForward(List<int> a) {
+  /// Reference (oracle) path: `pqcrypto DilithiumNTT.ntt` (FIPS 204 shape),
+  /// preserved verbatim — `_mul` graph with the legacy Barrett chain.
+  void _mlDsaForwardRef(List<int> a) {
     final q = ring.q;
     final zetas = params.zetas;
     var k = 1;
@@ -250,8 +282,9 @@ final class NttEngine {
     }
   }
 
-  /// pqcrypto DilithiumNTT.invNtt.
-  void _mlDsaInverse(List<int> a) {
+  /// Reference (oracle) path: `pqcrypto DilithiumNTT.invNtt`, preserved
+  /// verbatim — `_mul` graph with the legacy Barrett chain.
+  void _mlDsaInverseRef(List<int> a) {
     final q = ring.q;
     final zetas = params.zetas;
     var k = 255;
@@ -273,13 +306,180 @@ final class NttEngine {
     }
   }
 
-  /// FN-DSA / Falcon integer NTT (complete, negacyclic) over \(q = 12289\).
+  /// ML-DSA accelerated path: FIPS 204 ring NTT with fully inlined 32-bit-word
+  /// Montgomery REDC butterflies (plain-domain arrangement).
   ///
-  /// Twiddles are \(\zeta_k = \psi^{\mathrm{bitrev}(k)} \bmod q\) where
-  /// \(\psi^{n} \equiv -1\), \(\psi^{2n} \equiv 1\) (ψ = 49 for n=512, ψ = 7 for n=1024).
-  /// Matches Falcon reference constructions (e.g. itzmeanjan/falcon).
-  /// Used for verification-side integer arithmetic; not the floating-point FFT.
+  /// Twiddles are precomputed in Montgomery form ([_mlDsaZetasMont]) and the
+  /// polynomial stays in the plain domain throughout: REDC(zetaM · x) ≡
+  /// zeta · x, so outputs are bit-identical to the classic Barrett path with
+  /// zero input or output conversions.
+  ///
+  /// Bounds: prod < q^2 < 2^46; (prod + m·q) < 2^46 + R·q < 2^56 — wrap-free
+  /// in 64-bit Dart ints; no hardware division on this path. Fail-closed if
+  /// the Montgomery parameters are unavailable. See
+  /// test/mldsa_wrap_boundary_test.dart for the executable boundary evidence.
+  void _mlDsaForward(List<int> a) {
+    final zetasMont = _mlDsaZetasMont;
+    if (zetasMont == null) {
+      throw StateError(
+        'ML-DSA accelerated path requires ready Montgomery parameters',
+      );
+    }
+    const q = 8380417;
+    var k = 1;
+    for (var len = 128; len >= 1; len >>= 1) {
+      for (var start = 0; start < 256; start += 2 * len) {
+        final zetaM = zetasMont[k++];
+        for (var j = start; j < start + len; j++) {
+          final t = _redcMlDsa(zetaM * a[j + len]);
+          final fj = a[j];
+          final diff = fj - t;
+          a[j + len] = diff < 0 ? diff + q : diff;
+          final sum = fj + t;
+          a[j] = sum >= q ? sum - q : sum;
+        }
+      }
+    }
+  }
+
+  /// ML-DSA accelerated inverse with the same inlined REDC butterflies:
+  /// conjugate twiddles (`-zeta` in Montgomery form) and a Montgomery-form
+  /// \(n^{-1}\) scale so the output is the plain-domain result, identical to
+  /// the classic Barrett path. Bounds as documented on [_mlDsaForward].
+  void _mlDsaInverse(List<int> a) {
+    final zetasMont = _mlDsaZetasMont;
+    final invMont = _mlDsaInvScaleMont;
+    if (zetasMont == null || invMont == null) {
+      throw StateError(
+        'ML-DSA accelerated path requires ready Montgomery parameters',
+      );
+    }
+    const q = 8380417;
+    var ik = 255;
+    for (var len = 1; len < 256; len <<= 1) {
+      for (var start = 0; start < 256; start += 2 * len) {
+        var zetaM = zetasMont[ik--];
+        zetaM = q - zetaM; // -zetas[k] in Montgomery form
+        for (var j = start; j < start + len; j++) {
+          final t = a[j];
+          final u = a[j + len];
+          final sum = t + u;
+          a[j] = sum >= q ? sum - q : sum;
+          final diff = t - u;
+          final d = diff < 0 ? diff + q : diff;
+          a[j + len] = _redcMlDsa(zetaM * d);
+        }
+      }
+    }
+    for (var i = 0; i < 256; i++) {
+      a[i] = _redcMlDsa(invMont * a[i]);
+    }
+  }
+
+  /// Single-limb 32-bit-word Montgomery REDC for q = 8380417:
+  /// `m = ((prod mod 2^32) · nPrime) mod 2^32; u = (prod + m·q) >> 32`, one
+  /// conditional guard. Input bound prod < 2^46 → (prod + m·q) < 2^56, so the
+  /// sum cannot wrap a 64-bit signed int. nPrime = -q^{-1} mod 2^32
+  /// (= 4236238847, shipped in MontgomeryParams for this ring).
+  static int _redcMlDsa(int prod) {
+    const q = 8380417;
+    const mask = 0xFFFFFFFF;
+    const nPrime = 4236238847;
+    final m = ((prod & mask) * nPrime) & mask;
+    var u = (prod + m * q) >> 32;
+    if (u >= q) u -= q;
+    return u;
+  }
+
+  /// FN-DSA accelerated path: forward NTT with fully inlined k=27
+  /// single-guard Barrett butterflies (mu = 10921 = floor(2^27 / 12289)).
+  ///
+  /// Twiddle construction (shared with the reference path): tables are
+  /// \(\zeta_k = \psi^{\mathrm{bitrev}(k)} \bmod q\) where \(\psi^{n} \equiv
+  /// -1\), \(\psi^{2n} \equiv 1\) (ψ = 49 for n=512, ψ = 7 for n=1024),
+  /// matching Falcon reference constructions.
+  ///
+  /// Provenance: product bound raw < q^2 = 151,019,521 < 2^28 — one
+  /// conditional correction in expectation, the `%` escape retained as a
+  /// defensive guard but unreachable for in-range products; certified by the
+  /// exhaustive residue test over all 12289^2 products in
+  /// test/fndsa_exhaustive_residue_test.dart.
   void _fnDsaForward(List<int> a) {
+    final q = ring.q;
+    final n = ring.n;
+    final zetas = params.zetas;
+    var k = 1;
+    for (var len = n >> 1; len >= 1; len >>= 1) {
+      for (var start = 0; start < n; start += 2 * len) {
+        final zeta = zetas[k++];
+        for (var j = start; j < start + len; j++) {
+          final raw = zeta * a[j + len];
+          final t = fnDsaReduceK27(raw);
+          final fj = a[j];
+          final diff = fj - t;
+          a[j + len] = diff < 0 ? diff + q : diff;
+          final sum = fj + t;
+          a[j] = sum >= q ? sum - q : sum;
+        }
+      }
+    }
+  }
+
+  /// FN-DSA accelerated inverse: conjugate twiddles (`-zeta` mod q) walking
+  /// the same table backwards, and a k=27 single-guard final \(n^{-1}\)
+  /// scale. Outputs are the canonical plain-domain result, consistent with
+  /// the reference path. Product bounds as documented on [_fnDsaForward].
+  void _fnDsaInverse(List<int> a) {
+    final q = ring.q;
+    final n = ring.n;
+    final zetas = params.zetas;
+    final inv = params.invNScale; // n^{-1} mod q
+    var ik = n - 1;
+    for (var len = 1; len < n; len <<= 1) {
+      for (var start = 0; start < n; start += 2 * len) {
+        final zeta = q - zetas[ik--]; // -zeta mod q
+        for (var j = start; j < start + len; j++) {
+          final t = a[j];
+          final u = a[j + len];
+          final sum = t + u;
+          a[j] = sum >= q ? sum - q : sum;
+          final diff = t - u;
+          final d = diff < 0 ? diff + q : diff;
+          a[j + len] = fnDsaReduceK27(d * zeta);
+        }
+      }
+    }
+    for (var i = 0; i < n; i++) {
+      a[i] = fnDsaReduceK27(a[i] * inv);
+    }
+  }
+
+  /// Single-guard Barrett reduction for the FN-DSA product family:
+  /// q = 12289, shift = 27, mu = 10921 = floor(2^27 / 12289).
+  ///
+  /// Documented input bound: 0 <= prod < q^2 = 151,019,521 < 2^28 (covers all
+  /// butterfly and final-scale products). Two conditional subtractions, one
+  /// negative fix, and a defensive `%` escape that is unreachable for
+  /// in-range products (0 corrections observed under the bound). Exhaustively
+  /// certified over all 12289^2 products by
+  /// test/fndsa_exhaustive_residue_test.dart, which exercises this exact
+  /// production chain.
+  static int fnDsaReduceK27(int prod) {
+    const q = 12289;
+    const mu = 10921;
+    final quot = (prod * mu) >> 27;
+    var r = prod - quot * q;
+    r = r >= q ? r - q : r;
+    r = r >= q ? r - q : r;
+    if (r < 0) r += q;
+    if (r >= q) r %= q;
+    return r;
+  }
+
+  /// Reference (oracle) path: FN-DSA / Falcon integer NTT (complete,
+  /// negacyclic) over \(q = 12289\), preserved verbatim — `_mul` graph with
+  /// the legacy Barrett chain.
+  void _fnDsaForwardRef(List<int> a) {
     final q = ring.q;
     final n = ring.n;
     final zetas = params.zetas;
@@ -296,7 +496,9 @@ final class NttEngine {
     }
   }
 
-  void _fnDsaInverse(List<int> a) {
+  /// Reference (oracle) path for the FN-DSA inverse NTT, preserved verbatim —
+  /// `_mul` graph with the legacy Barrett chain.
+  void _fnDsaInverseRef(List<int> a) {
     final q = ring.q;
     final n = ring.n;
     final zetas = params.zetas;
@@ -504,18 +706,16 @@ final class NttEngine {
     }
   }
 
-  /// Barrett reduction for ML-KEM: q = 3329, mu = 5039, shift = 24.
+  /// Barrett reduction for ML-KEM: q = 3329, v = 20159, shift = 26.
+  /// 20159 = ceil(2^26 / 3329) — pqcrypto-parity single-guard form.
   /// Inlined to avoid [BarrettParams] object field lookups in the hot loop.
-  /// Input bound: 0 <= a, b < q, so raw = a * b < q^2 ≈ 1.1e7, well within int.
+  /// Input bound: 0 <= a, b < q, so raw = a * b < q^2 ≈ 1.1e7 < 2^24;
+  /// certified by exhaustive residue check over all 3329^2 products.
   static int _mulBarrettMlKem(int a, int b) {
     final raw = a * b;
-    final quot = (raw * 5039) >> 24;
+    final quot = (raw * 20159) >> 26;
     var r = raw - quot * 3329;
-    r = r >= 3329 ? r - 3329 : r;
-    r = r >= 3329 ? r - 3329 : r;
-    r = r >= 3329 ? r - 3329 : r;
-    if (r < 0) r += 3329;
-    if (r >= 3329) r %= 3329;
+    if (r < 0 || r >= 3329) r %= 3329;
     return r;
   }
 

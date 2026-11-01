@@ -26,6 +26,7 @@ import 'dart:io';
 import 'dart:math';
 
 import 'package:pqlattice/pqlattice.dart';
+
 /// Immutable record of one benchmark measurement. Every field is required
 /// so that a number without its full context cannot be accidentally
 /// presented as a claim.

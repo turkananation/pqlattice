@@ -108,6 +108,14 @@ only.
 |-----|------|------|---------|-----|-------|-------|
 | 3.13.5 | AOT exe | linux x64 | mlKem | ntt+basemul+inv | 204.6 | 2000 iters, `KernelMode.accelerated` |
 | 3.13.5 | AOT exe | linux x64 | mlKem | in-place ntt+basemul+inv | 194.3 | 2000 iters, `KernelMode.accelerated` |
+| 3.13.5 | AOT exe | linux x64 | mlKem | in-place ntt+basemul+inv | 172.9 | pre-stage chains, 1000 iters x 5 rounds |
+| 3.13.5 | AOT exe | linux x64 | mlDsa | in-place ntt+basemul+inv | 332.9 | pre-stage chains, 1000 iters x 5 rounds |
+| 3.13.5 | AOT exe | linux x64 | fnDsa512 | in-place ntt+basemul+inv | 629.5 | pre-stage chains, 1000 iters x 5 rounds |
+| 3.13.5 | AOT exe | linux x64 | fnDsa1024 | in-place ntt+basemul+inv | 1403.4 | pre-stage chains, 1000 iters x 5 rounds |
+| 3.13.5 | AOT exe | linux x64 | mlKem | in-place ntt+basemul+inv | 142.6 | post-stage inlined chains, 1000 iters x 5 rounds |
+| 3.13.5 | AOT exe | linux x64 | mlDsa | in-place ntt+basemul+inv | 158.1 | post-stage inlined chains, 1000 iters x 5 rounds |
+| 3.13.5 | AOT exe | linux x64 | fnDsa512 | in-place ntt+basemul+inv | 388.4 | post-stage inlined chains, 1000 iters x 5 rounds |
+| 3.13.5 | AOT exe | linux x64 | fnDsa1024 | in-place ntt+basemul+inv | 837.4 | post-stage inlined chains, 1000 iters x 5 rounds |
 
 These are machine-specific smoke numbers, not portable speed claims.
 
@@ -203,7 +211,7 @@ Done (no blocker, already implemented):
 
 ### 7.6 Honest limits
 
-- **No claim of speedup over pqcrypto** until a same-host pqcrypto baseline exists (different repo, not run yet).
+- **No claim of speedup over pqcrypto** until a same-host pqcrypto baseline exists for the op being discussed. The manual same-host comparison exists now (`pqcrypto` branch `bench/ntt-side-by-side`, `dart pub get; dart compile exe test/benchmarks/side_by_side.dart` with the pqlattice sibling checkout): bit-identity mlKem 20/20, mlDsa 10/10; measured ns/op rows show pqlattice **slower** on every measured op (mlKem pipeline ~1.94x, mlDsa pipeline ~3.10x slower). Catalogues that gap per op; do not soften or invert it in docs.
 - **No SIMD speed claim** until `SimdCapability.isLikelyBeneficial` is flipped on after AOT parity is recorded.
 - **No JIT-vs-AOT speedup claims** — only variance documentation.
 - **No cross-machine regression thresholds** — same machine only.

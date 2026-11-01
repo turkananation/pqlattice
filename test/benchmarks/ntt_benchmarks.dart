@@ -198,11 +198,17 @@ BenchmarkResult _benchNttForwardInPlace(
   String buildMode,
 ) {
   final engine = NttEngine(ring);
+  final base = benchPoly(ring, 0xDEAD);
+  final p = Poly.zero(ring);
   var blackHole = 0;
 
   final (ns, _) = measureRounds(
     () {
-      final p = benchPoly(ring, 0xDEAD + blackHole);
+      // forwardInPlace mutates its operand, so each iteration restores the
+      // buffer from the base input via a copy write (doc/BENCHMARKS.md §4:
+      // setup excludes only generation/allocation; the reset a caller pays
+      // for writing fresh input into a reused buffer stays in timing).
+      p.coeffs.setAll(0, base.coeffs);
       engine.forwardInPlace(p);
       blackHole += p.coeffs[0];
       observeInt(blackHole);
@@ -243,11 +249,16 @@ BenchmarkResult _benchNttInverseInPlace(
   String buildMode,
 ) {
   final engine = NttEngine(ring);
+  final base = benchPoly(ring, 0xFEED);
+  final p = Poly.zero(ring);
   var blackHole = 0;
 
   final (ns, _) = measureRounds(
     () {
-      final p = benchPoly(ring, 0xFEED + blackHole);
+      // Same reset discipline as the forward in-place row: the operand is
+      // restored from the base input by copy write, then only the timed
+      // forward+inverse in-place pair runs.
+      p.coeffs.setAll(0, base.coeffs);
       engine.forwardInPlace(p);
       engine.inverseInPlace(p);
       blackHole += p.coeffs[0];
@@ -261,7 +272,7 @@ BenchmarkResult _benchNttInverseInPlace(
 
   return BenchmarkResult(
     suite: 'ntt',
-    operation: 'inverseInPlace',
+    operation: 'forward+inverseInPlace',
     profile: name,
     q: ring.q,
     n: ring.n,
