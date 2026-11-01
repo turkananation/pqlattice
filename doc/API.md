@@ -97,6 +97,23 @@ PolyVec hats = ntt.forwardVec(v);
 - Scalar path is canonical.
 - Optional SIMD must match scalar; see [VM_COMPILER_BOUNDARY.md](VM_COMPILER_BOUNDARY.md).
 - Lazy reduction: implement with documented intermediate bounds (Path B).
+- Accelerated default is monomorphic per ring: ML-KEM uses an inlined
+  single-guard Barrett multiplier (v = 20159, shift = 26; pqcrypto-parity
+  ceil-quotient form); ML-DSA uses inlined 32-bit-word Montgomery REDC
+  butterflies with Montgomery-form twiddles precomputed at engine
+  construction (plain-domain in, plain-domain out — zero conversions;
+  fail-closed if Montgomery parameters are unavailable); FN-DSA uses inlined
+  single-guard Barrett butterflies (mu = 10921, shift = 27) with a
+  conjugate-twiddle inverse and a k=27 final scale. All hot loops are
+  division-free with documented intermediate bounds: products < q^2 on
+  ML-KEM/FN-DSA; the ML-DSA REDC u-term sum < 2^56.
+- `KernelMode.reference` routes to the preserved reference paths verbatim
+  (classic Barrett `_mul` chain) — oracle semantics unchanged.
+- Constant provenance: `tool/verify_constants.py` checks the Barrett
+  recipes, the Montgomery constants, and the FN-DSA zeta tables;
+  reduction-boundary evidence lives in `test/mldsa_wrap_boundary_test.dart`
+  (legacy k=48 wrap edge) and `test/fndsa_exhaustive_residue_test.dart`
+  (exhaustive 12289^2 residue certification of the shipped k=27 chain).
 
 ---
 
