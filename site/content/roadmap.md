@@ -14,7 +14,7 @@ what was measured and rejected:
 - per-ring inlined butterfly chains as the accelerated default (O1 stage)
   with the certified proof-family: 3329² and 12289² exhaustive residue tests,
   ML-DSA REDC boundary documentation, ring table provenance gate (locked in
-  via `tool/verify_constants.py` in CI), docs with behavior;
+  via `tool/verify_constants.dart` in CI), docs with behavior;
 - a publishable docs/measurement site (this one), mirrored from repo doc/ truths;
 - Montgomery substrate (parameters, mont pointwise products, opt-in engine
   profile): landed, fail-closed, measured — see ledger below.
