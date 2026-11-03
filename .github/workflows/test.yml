@@ -33,4 +33,4 @@ jobs:
         run: dart test
 
       - name: Verify constants
-        run: python3 tool/verify_constants.py
+        run: dart run tool/verify_constants.dart

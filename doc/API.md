@@ -109,7 +109,7 @@ PolyVec hats = ntt.forwardVec(v);
   ML-KEM/FN-DSA; the ML-DSA REDC u-term sum < 2^56.
 - `KernelMode.reference` routes to the preserved reference paths verbatim
   (classic Barrett `_mul` chain) — oracle semantics unchanged.
-- Constant provenance: `tool/verify_constants.py` checks the Barrett
+- Constant provenance: `tool/verify_constants.dart` checks the Barrett
   recipes, the Montgomery constants, and the FN-DSA zeta tables;
   reduction-boundary evidence lives in `test/mldsa_wrap_boundary_test.dart`
   (legacy k=48 wrap edge) and `test/fndsa_exhaustive_residue_test.dart`

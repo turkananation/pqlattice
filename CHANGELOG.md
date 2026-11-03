@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Provenance checker moved from Python to pure Dart: `tool/verify_constants.dart`
+  (same checks, same output rows, same exit codes; `test.yml` runs
+  `dart run tool/verify_constants.dart`; the former `tool/verify_constants.py`
+  is retired).
 - Minimum SDK constraint raised to `^3.13.0` (current stable line; see `doc/SDK_CONSTRAINTS.md`).
 - Montgomery status updated from "deferred" to "ready, opt-in" across README, API.md, ARCHITECTURE.md (MontgomeryParams ready for 3329/12289/8380417; opt-in via `NttEngine(montgomeryParams:)`; not default).
 - Benchmark suite added under `test/benchmarks/`: dependency-free harness with DSE-defeating sink, warm-up + 5 rounds + median, full context per row (SDK, OS, CPU, buildMode, profile, gitSha). Suites: ntt, basemul, reduce, pipeline, simd_parity, polyvec, schoolbook. Entry point `benchmarks_all.dart` emits TSV.

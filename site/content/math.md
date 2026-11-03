@@ -24,7 +24,7 @@ executable test.
 Provenance rule: twiddle tables come from cited specifications (FIPS 203 /
 FIPS 204 shapes; Falcon-style negacyclic construction for FN-DSA where
 ψⁿ ≡ −1, ψ²ⁿ ≡ 1 and ζₖ = ψ^bitrev(k)). Empty tables fail closed — the engine
-throws rather than transform as identity. `tool/verify_constants.py` re-checks
+throws rather than transform as identity. `tool/verify_constants.dart` re-checks
 provenance every CI run.
 
 ## The transforms

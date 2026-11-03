@@ -51,8 +51,8 @@ Code: `lib/src/ntt/mlkem_tables.dart`, `mldsa_tables.dart`, `fndsa_tables.dart`.
 
 | Item | Source / notes | Verification |
 |------|----------------|--------------|
-| \(n = 512\), primitive root \(\psi = 49\), \(\psi^{512} \equiv -1\), \(\psi^{1024} \equiv 1\) | Falcon/FN-DSA integer NTT construction; `zetas[k] = ψ^{bitrev9(k)} mod q`. | `verify_constants.py` regenerates all 512 zetas from ψ; `49^512 mod 12289 == 12288` (-1); `49^1024 mod 12289 == 1`. |
-| \(n = 1024\), \(\psi = 7\), \(\psi^{1024} \equiv -1\), \(\psi^{2048} \equiv 1\) | Falcon/FN-DSA integer NTT construction; `zetas[k] = ψ^{bitrev10(k)} mod q`. | `verify_constants.py` regenerates all 1024 zetas from ψ; `7^1024 mod 12289 == 12288` (-1); `7^2048 mod 12289 == 1`. |
+| \(n = 512\), primitive root \(\psi = 49\), \(\psi^{512} \equiv -1\), \(\psi^{1024} \equiv 1\) | Falcon/FN-DSA integer NTT construction; `zetas[k] = ψ^{bitrev9(k)} mod q`. | `verify_constants.dart` regenerates all 512 zetas from ψ; `49^512 mod 12289 == 12288` (-1); `49^1024 mod 12289 == 1`. |
+| \(n = 1024\), \(\psi = 7\), \(\psi^{1024} \equiv -1\), \(\psi^{2048} \equiv 1\) | Falcon/FN-DSA integer NTT construction; `zetas[k] = ψ^{bitrev10(k)} mod q`. | `verify_constants.dart` regenerates all 1024 zetas from ψ; `7^1024 mod 12289 == 12288` (-1); `7^2048 mod 12289 == 1`. |
 | `invN` | `512^{-1} mod 12289 = 12265`; `1024^{-1} mod 12289 = 12277`. | `(12265 * 512) % 12289 == 1`; `(12277 * 1024) % 12289 == 1`. |
 | Montgomery companions | `nPrime`, `r2` for q=12289 verified by mont identity tests. | `nPrime=12287`, `r2=10952`, `logR=16`; toMont/fromMont + montMul identities green. |
 | Status | L2–L3 green: roundtrip + pointwise basemul vs schoolbook for random and boundary polys; linearity green. | **complete (math)** |
