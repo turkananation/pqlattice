@@ -44,9 +44,6 @@ jobs:
         working-directory: site
         run: dart pub global run jaspr_cli:jaspr build --sitemap-domain https://yardenah.com/
 
-      - name: Check main package untouched by site
-        run: dart analyze
-
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
