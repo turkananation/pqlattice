@@ -7,7 +7,7 @@ description: >-
 version: 0.1.0-dev.1
 homepage: https://yardenah.com/
 repository: https://github.com/turkananation/pqlattice
-# documentation: set when GitHub Pages or package site exists
+documentation: https://turkananation.github.io/pqlattice/
 issue_tracker: https://github.com/turkananation/pqlattice/issues
 topics:
   - cryptography
