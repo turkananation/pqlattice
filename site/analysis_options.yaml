@@ -1,0 +1,2 @@
+# The site is its own package; it follows the same recommended lints.
+include: package:lints/recommended.yaml

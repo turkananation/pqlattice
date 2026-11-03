@@ -128,6 +128,7 @@ Deliver **correct, auditable, pure-Dart** ring / NTT / modular arithmetic with:
 | SIMD | `lib/src/simd/` + parity tests | Default-on without AOT evidence |
 | Kernel policy | `lib/src/api/` | Protocol code |
 | Public exports | `lib/pqlattice.dart` | Ad-hoc exports from random files |
+| Docs site (Jaspr) | `site/` own package; `site/content` markdown | root pubspec (site deps are never hoisted) |
 | Claims / mission rules | `doc/CLAIM_BOUNDARY.md`, `AGENTS.md` | Softening language without review |
 
 ### 3.2 Change workflow (mandatory)
