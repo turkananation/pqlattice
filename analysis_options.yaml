@@ -5,3 +5,10 @@ linter:
     public_member_api_docs: false
     # Enable stricter docs before publish:
     # public_member_api_docs: true
+
+# The site is its own Jaspr package with its own dependencies; it is analyzed
+# and built inside site/ (dart pub get + jaspr build), never as part of the
+# main package gates.
+analyzer:
+  exclude:
+    - site/**
