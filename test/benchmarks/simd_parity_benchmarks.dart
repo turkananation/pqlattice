@@ -1,132 +1,189 @@
-/// SIMD parity benchmark suite.
+/// SIMD NTT benchmark suite.
 ///
-/// Measures SIMD-shaped pointwise vs scalar Barrett pointwise timing for
-/// every shipped profile. This measures **speed only**, not correctness —
-/// correctness parity is enforced by test/simd_pointwise_parity_test.dart
-/// and is a merge gate independent of timing.
+/// Measures the staged typed scalar kernel against the split-pass `Int32x4`
+/// kernel for every shipped profile, forward and inverse. This measures
+/// **speed only**; residue parity is enforced bit-exactly by
+/// `test/simd_ntt_parity_test.dart` and is a merge gate independent of timing.
+///
+/// Numbers are meaningful only from `dart compile exe` (`doc/SIMD.md` §4).
+/// On dart2js the vector kernel is expected to lose — the backend gate in
+/// `SimdCapability` exists because of that measurement.
 library;
 
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:pqlattice/pqlattice.dart';
+import 'package:pqlattice/src/ntt/ntt_scalar.dart';
 import 'package:pqlattice/src/simd/ntt_simd_int32x4.dart';
+import 'package:pqlattice/src/simd/ntt_workspace.dart';
 
 import 'benchmark_harness.dart';
 
-/// Runs all SIMD parity benchmarks and appends results to [out].
+/// Runs the SIMD NTT benchmark matrix.
 List<BenchmarkResult> runSimdParityBenchmarks({
   required BenchmarkContext ctx,
   required String buildMode,
 }) {
   final results = <BenchmarkResult>[];
 
-  final profiles = <(RingParams, String)>[
-    (RingParams.mlKem, 'mlKem'),
-    (RingParams.mlDsa, 'mlDsa'),
-    (RingParams.fnDsa512, 'fnDsa512'),
-    (RingParams.fnDsa1024, 'fnDsa1024'),
-  ];
-
-  for (final (ring, name) in profiles) {
-    results.add(_benchScalarPointwise(ring, name, ctx, buildMode));
-    results.add(_benchSimdPointwise(ring, name, ctx, buildMode));
+  for (final ring in <RingParams>[
+    RingParams.mlKem,
+    RingParams.mlDsa,
+    RingParams.fnDsa512,
+    RingParams.fnDsa1024,
+  ]) {
+    results.addAll(_benchProfile(ring, ctx, buildMode));
   }
 
   drainBenchmarkSink();
   return results;
 }
 
-BenchmarkResult _benchScalarPointwise(
+List<BenchmarkResult> _benchProfile(
   RingParams ring,
-  String name,
   BenchmarkContext ctx,
   String buildMode,
 ) {
-  final rnd = Random(0x1753 ^ ring.q);
-  final a = Poly.fromCoeffs(
-    ring,
-    List<int>.generate(ring.n, (_) => rnd.nextInt(ring.q)),
-  );
-  final b = Poly.fromCoeffs(
-    ring,
-    List<int>.generate(ring.n, (_) => rnd.nextInt(ring.q)),
-  );
-  var blackHole = 0;
+  final n = ring.n;
+  final params = NttParams.forRing(ring);
+  final mont = ring.q == 8380417 ? MontgomeryParams.mlDsa : null;
+  final zetas = mont == null
+      ? params.zetas
+      : params.zetas.map((z) => ModQ.toMont(z, mont)).toList(growable: false);
+  final invScale = mont == null
+      ? params.invNScale
+      : ModQ.toMont(params.invNScale, mont);
 
-  final (ns, _) = measureRounds(
-    () {
-      final c = Basemul.pointwise(a, b, ring);
-      blackHole += c.coeffs[0];
-      observeInt(blackHole);
-    },
-    iterations: kDefaultIterations,
-    rounds: kDefaultRounds,
-    warmup: kDefaultWarmup,
-    observe: (i) => observeInt(i),
+  final rnd = Random(0x51D ^ ring.q ^ n);
+  final source = Int32List.fromList(
+    List<int>.generate(n, (_) => rnd.nextInt(ring.q)),
+  );
+  final ws = NttWorkspace(n);
+
+  final results = <BenchmarkResult>[];
+
+  // ── forward ──────────────────────────────────────────────────────────────
+  results.add(
+    _bench(
+      ctx: ctx,
+      buildMode: buildMode,
+      ring: ring,
+      operation: 'nttForward',
+      kernelMode: 'typedScalar',
+      body: () {
+        ws.lanes.setAll(0, source);
+        switch (ring.name) {
+          case 'ml-kem':
+            NttScalar.mlKemForward(ws.lanes, zetas);
+          case 'ml-dsa':
+            NttScalar.mlDsaForward(ws.lanes, zetas);
+          default:
+            NttScalar.fnDsaForward(ws.lanes, n, zetas);
+        }
+        observeInt(ws.lanes[0]);
+      },
+    ),
+  );
+  results.add(
+    _bench(
+      ctx: ctx,
+      buildMode: buildMode,
+      ring: ring,
+      operation: 'nttForward',
+      kernelMode: 'simd',
+      body: () {
+        ws.lanes.setAll(0, source);
+        switch (ring.name) {
+          case 'ml-kem':
+            NttSimdInt32x4.mlKemForward(ws, zetas);
+          case 'ml-dsa':
+            NttSimdInt32x4.mlDsaForward(ws, zetas);
+          default:
+            NttSimdInt32x4.fnDsaForward(ws, n, zetas);
+        }
+        observeInt(ws.lanes[0]);
+      },
+    ),
   );
 
-  return BenchmarkResult(
-    suite: 'simd',
-    operation: 'pointwise',
-    profile: name,
-    q: ring.q,
-    n: ring.n,
-    kernelMode: 'optimizedScalar',
-    reduceStrategy: 'barrett',
-    layout: 'allocating',
-    domain: 'plain',
-    buildMode: buildMode,
-    iterationsPerRound: kDefaultIterations,
-    rounds: kDefaultRounds,
-    warmupIterations: kDefaultWarmup,
-    roundNs: ns,
-    sink: drainBenchmarkSink(),
-    sdkVersion: ctx.sdkVersion,
-    os: ctx.os,
-    cpuCount: ctx.cpuCount,
-    gitSha: ctx.gitSha,
+  // ── inverse ──────────────────────────────────────────────────────────────
+  results.add(
+    _bench(
+      ctx: ctx,
+      buildMode: buildMode,
+      ring: ring,
+      operation: 'nttInverse',
+      kernelMode: 'typedScalar',
+      body: () {
+        ws.lanes.setAll(0, source);
+        switch (ring.name) {
+          case 'ml-kem':
+            NttScalar.mlKemInverse(ws.lanes, zetas, invScale);
+          case 'ml-dsa':
+            NttScalar.mlDsaInverse(ws.lanes, zetas, invScale);
+          default:
+            NttScalar.fnDsaInverse(ws.lanes, n, zetas, invScale);
+        }
+        observeInt(ws.lanes[0]);
+      },
+    ),
   );
+  results.add(
+    _bench(
+      ctx: ctx,
+      buildMode: buildMode,
+      ring: ring,
+      operation: 'nttInverse',
+      kernelMode: 'simd',
+      body: () {
+        ws.lanes.setAll(0, source);
+        switch (ring.name) {
+          case 'ml-kem':
+            NttSimdInt32x4.mlKemInverse(ws, zetas, invScale);
+          case 'ml-dsa':
+            NttSimdInt32x4.mlDsaInverse(ws, zetas, invScale);
+          default:
+            NttSimdInt32x4.fnDsaInverse(ws, n, zetas, invScale);
+        }
+        observeInt(ws.lanes[0]);
+      },
+    ),
+  );
+
+  return results;
 }
 
-BenchmarkResult _benchSimdPointwise(
-  RingParams ring,
-  String name,
-  BenchmarkContext ctx,
-  String buildMode,
-) {
-  final rnd = Random(0xBEEF ^ ring.q);
-  final a = Poly.fromCoeffs(
-    ring,
-    List<int>.generate(ring.n, (_) => rnd.nextInt(ring.q)),
-  );
-  final b = Poly.fromCoeffs(
-    ring,
-    List<int>.generate(ring.n, (_) => rnd.nextInt(ring.q)),
-  );
-  final out = Poly.zero(ring);
-  var blackHole = 0;
-
-  final (ns, _) = measureRounds(
-    () {
-      NttSimdInt32x4.pointwiseInPlace(out, a, b, ring);
-      blackHole += out.coeffs[0];
-      observeInt(blackHole);
-    },
+BenchmarkResult _bench({
+  required BenchmarkContext ctx,
+  required String buildMode,
+  required RingParams ring,
+  required String operation,
+  required String kernelMode,
+  required void Function() body,
+}) {
+  final (ns, memory) = measureRounds(
+    body,
     iterations: kDefaultIterations,
     rounds: kDefaultRounds,
     warmup: kDefaultWarmup,
-    observe: (i) => observeInt(i),
+    observe: observeInt,
   );
 
   return BenchmarkResult(
     suite: 'simd',
-    operation: 'pointwise',
-    profile: name,
+    operation: operation,
+    profile: switch (ring.name) {
+      'ml-kem' => 'mlKem',
+      'ml-dsa' => 'mlDsa',
+      'fn-dsa-512' => 'fnDsa512',
+      _ => 'fnDsa1024',
+    },
     q: ring.q,
     n: ring.n,
-    kernelMode: 'simd',
-    reduceStrategy: 'barrett',
-    layout: 'allocating',
+    kernelMode: kernelMode,
+    reduceStrategy: ring.q == 8380417 ? 'montgomery' : 'barrett',
+    layout: 'staged',
     domain: 'plain',
     buildMode: buildMode,
     iterationsPerRound: kDefaultIterations,
@@ -138,5 +195,6 @@ BenchmarkResult _benchSimdPointwise(
     os: ctx.os,
     cpuCount: ctx.cpuCount,
     gitSha: ctx.gitSha,
+    memoryRssBytes: memory,
   );
 }

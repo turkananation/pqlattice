@@ -19,8 +19,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Correct ML-DSA Barrett recipe (`shift=48`) for full residue products.
 - `NttParams.forRing`; NTT refuses missing tables (no identity no-op).
 - Montgomery and table-provenance tests; `tool/verify_constants.py`.
+- **Split-pass `Int32x4` NTT kernels** for ML-KEM, ML-DSA, FN-DSA-512, and
+  FN-DSA-1024, forward and inverse: scalar multiply-reduce pass (the certified
+  per-ring recipe) + 4-lane `Int32x4` add/sub combine with branchless
+  canonicalization `d + ((d >> 31) & q)`. Bit-identical to the typed scalar
+  kernels; `test/simd_ntt_parity_test.dart` is the merge gate.
+- **Typed staged scalar NTT kernels** (`NttTyped`, `Int32List` lanes) used as
+  the SIMD comparator and as the fallback on gated-off profiles/backends.
+- `NttWorkspace`: 16-byte-aligned `Int32x4List` with an aliased `Int32List`
+  scalar view over the same bytes.
+- `LatticeKernels.preferSimdNtt(mode, ring, {required bool inverse})` and
+  `LatticeKernels.simdNttEvidence(...)`: per-profile, per-direction evidence
+  gate with a 1.5× AOT adoption threshold. `LatticeKernels.simdEnabled`
+  reports the backend fact.
+- `lib/src/ntt/ntt_reduce.dart`: shared, exhaustively-certified reduction
+  recipes (`mlKemMulBarrett`, `mlDsaRedc`, `fnDsaReduceK27`) consumed by all
+  three kernel tiers, so a rewrite cannot drift from the certified residues.
 
 ### Changed
+
+- **SIMD backend gate rewritten**: `SimdCapability.supportsInt32x4` is now a
+  measured backend decision — Dart VM **on**, dart2wasm **on** (`v128`, no
+  speed claim; unmeasured locally), dart2js **off** (emulated `Int32x4`
+  measured 2.7× slower than typed scalar). `PQLATTICE_SIMD_OFF` /
+  `PQLATTICE_SIMD_FORCE` compile-time overrides replace the previous mutable
+  scaffold flag.
+- **`Basemul.pointwise` / `Basemul.mlKemPairs` inlined per ring**: ML-KEM
+  Barrett, FN-DSA k=27, ML-DSA two-REDC (`REDC(REDC(a·b)·R²) = a·b`). Removes
+  the `BarrettParams` object loads and the silent `%` fallback that
+  `ModQ.reduceBarrett` hit on ML-DSA (documented `shift = 48` with
+  `mu = 33587228` overflows 64-bit for full products).
+- **`CoeffBuffer.fromList` clone fast path**: bulk typed-list copy when the
+  source is already the destination width (~3.1 µs → ~0.15 µs at n = 256).
+- `NttEngine` forward/inverse now stage through `_stagedForward` /
+  `_stagedInverse` and dispatch on `(q, n)` plus the SIMD evidence gate; the
+  former `List<int>` kernel bodies and their inlined reduce helpers were
+  deleted.
+- `LatticeKernels.preferSimd` is documented as a backend-level helper only;
+  kernel dispatch must use `preferSimdNtt`.
+- `test/benchmarks/simd_parity_benchmarks.dart` now benchmarks typed scalar vs
+  split-pass `Int32x4` NTT per profile and direction (the deleted
+  SIMD-pointwise benchmark is gone with the fake kernel).
 
 - Provenance checker moved from Python to pure Dart: `tool/verify_constants.dart`
   (same checks, same output rows, same exit codes; `test.yml` runs

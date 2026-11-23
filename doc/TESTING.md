@@ -34,7 +34,7 @@ Related: [AGENTS.md](../AGENTS.md), [INTEROP_AND_FIPS_RULE.md](INTEROP_AND_FIPS_
 | **L1 — Field reduce** | Barrett / Montgomery / freeze vs reference `mod q` | Every accelerated reduce must match L1 on random + edge coeffs | `test/barrett_*.dart`, `mod_q_test.dart`, `mod_strategy_test.dart` |
 | **L2 — NTT roundtrip** | `iNTT(NTT(a)) ≡ a` (canonical residues) for each profile | Twiddles + invN + scaling correct | `test/ntt_roundtrip_test.dart`, profile NTT tests |
 | **L3 — NTT × basemul vs schoolbook** | Domain mul then inverse equals schoolbook product | End-to-end ring mul for that profile | `test/ring_mul_test.dart`, profile tests |
-| **L4 — SIMD parity** | SIMD-shaped kernel ≡ optimized scalar on fixed + random vectors | Required before treating SIMD as capable | `test/simd_pointwise_parity_test.dart` |
+| **L4 — SIMD parity** | Split-pass `Int32x4` kernel ≡ typed scalar on random, adversarial, and engine-level vectors | Required before treating SIMD as capable | `test/simd_ntt_parity_test.dart` |
 | **L5 — Intermediate lock** | Vectors / poly ops match `pqcrypto` (or published ref) on named fixtures | Required before Path B substitution | `test/` or `tool/` fixtures, clearly labeled |
 | **L6 — Scheme KAT / interop** | Full ML-KEM / ML-DSA / FN-DSA bytes | **`pqcrypto` only** — not a `pqlattice` merge gate |
 
@@ -110,7 +110,7 @@ A PR that touches math **must not merge** unless:
 [ ] If reduction touched: barrett_* + mod_* green
 [ ] If NTT/tables touched: ntt_roundtrip + that profile’s NTT test green
 [ ] If basemul shape touched: ring_mul / mlkem pairs regression green
-[ ] If SIMD touched: simd_pointwise_parity green
+[ ] If SIMD touched: simd_ntt_parity green (bit-exact, all four profiles)
 [ ] No new “FIPS validated” / scheme-KAT claims in docs
 [ ] CHANGELOG note if public behavior or default kernel changed
 ```

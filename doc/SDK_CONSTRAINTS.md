@@ -1,6 +1,6 @@
 # SDK Constraints & Feature Adoption
 
-Last updated: 2026-10-27
+Last updated: 2026-11-13
 
 How `pqlattice` relates to **Dart SDK versions** and optional SIMD surface
 without breaking older consumers or inventing APIs.
@@ -21,21 +21,27 @@ Adjust only with CI proof on the new lower/upper bound. Prefer **raising**
 minimum when adopting APIs that do not exist on older SDKs—not silent
 runtime crashes.
 
+The shipped SIMD kernel deliberately uses only the long-standing `Int32x4`
+surface (`+`, `-`, `>>`, `&`, four-argument constructor), so `^3.13.0` is
+still accurate even though the measurement host runs 3.14.0.
+
 ---
 
 ## 2. Feature matrix (Dart `typed_data` / VM)
 
-| Feature | Approx. availability | `pqlattice` use |
-|---------|----------------------|-----------------|
-| `Int32x4` `+` `-` `&` `\|` `^` | Long-standing | SIMD shape loads/arithmetic |
-| AOT specialization improvements | Ongoing (see SDK issues) | Measure; don’t assume |
-| `Int32x4` shifts, `min`/`max`, `andNot`, compares, `splat` | Landing under SDK SIMD tracking (#64170) | Use when min SDK guarantees them **or** guard |
-| **`Int32x4 operator *`** | **Open** (#59816) | Not used until shipped; keep scalar lane mul |
-| Relaxed SIMD / Wasm extras | #64216 | No native default dependency |
+| Feature | Availability | `pqlattice` use |
+|---------|--------------|-----------------|
+| `Int32x4` `+` `-` `&` `\|` `^` `~` unary `-` | Long-standing | **Used** — combine pass |
+| `Int32x4` `<<` `>>` | Long-standing; `>>` is arithmetic (sign-propagating) | **Used** — `>> 31` builds the branchless negate mask |
+| `Int32x4.min/max/andNot/equal/allTrue/anyTrue` | Long-standing | Available; not needed |
+| `Int32x4 >>>` (logical shift) | **3.14.0** | Not used — would force an `sdk:` bump for no gain |
+| `Int32x4.splat` | **3.14.0** | **Not used** — `Int32x4(q, q, q, q)` gives identical codegen and keeps `^3.13.0` |
+| **`Int32x4 operator *`** | **3.15.0 main only**; no VM graph intrinsic yet (#59816, #64170) | Not used. Lane-wise 32-bit wrap cannot carry ML-DSA `q² ≈ 2^46`, so it is a future **basemul** lever, not an NTT one |
+| Relaxed SIMD / Wasm extras | #64216, open | No native default dependency |
 
-Exact version numbers for shifts/min/max must be filled when they hit a
-**stable** release you depend on—update this table in the same PR that
-raises `sdk:` or adds guards.
+Exact version numbers for `>>>` and `splat` were confirmed against the
+3.14.0 / 3.15.0 stable and dev CHANGELOGs; re-check before changing the
+`Int32x4` surface used by `lib/src/simd/`.
 
 ---
 
@@ -50,22 +56,17 @@ environment:
   sdk: ^3.XX.0   # first stable with Int32x4.*
 ```
 
-### B. Conditional code (preferred during transition)
+### B. Conditional code
+
+Prefer a **single capability helper** (`SimdCapability`) over scattered
+checks. Do **not** write a runtime `supportsInt32x4Mul` probe: `operator *`
+is a compile-time API, so a probe cannot both compile on older SDKs and
+select it at runtime. Either raise the constraint or keep the scalar form.
 
 ```dart
-// Conceptual — implement with a single capability helper, not scattered checks
-bool get supportsInt32x4Mul => /* SDK version or probe */;
-
-Int32x4 product(Int32x4 a, Int32x4 b) {
-  if (supportsInt32x4Mul) {
-    return a * b; // only compile/call when SDK has operator *
-  }
-  return Int32x4(a.x * b.x, a.y * b.y, a.z * b.z, a.w * b.w);
-}
+// Shipped pattern: one gate, one kernel, no per-op probes.
+final simd = LatticeKernels.preferSimdNtt(mode, ring, inverse: false);
 ```
-
-Until the language/analyzer knows `operator *`, keep the true-mul path in a
-version-gated library or defer entirely to post-upgrade PR.
 
 ### C. Document-only
 
@@ -87,7 +88,9 @@ not complicate the native default path.
 ## 5. Agent rule
 
 ```text
-[ ] Do not call Int32x4 * until SDK_SIMD_TRACKING snapshot says available
+[ ] Do not call Int32x4 * until SDK_SIMD_TRACKING snapshot says it has a
+    shipped stable release AND a VM graph intrinsic
 [ ] Any sdk: constraint bump → update this file + CHANGELOG
 [ ] Prefer parity tests over assuming intrinsification quality
+[ ] Do not add a runtime probe for a compile-time API
 ```

@@ -143,7 +143,34 @@ enum KernelMode {
 }
 
 LatticeKernels.defaultMode; // KernelMode.accelerated
+
+// Backend fact (not a per-kernel decision):
+LatticeKernels.simdEnabled;            // VM/Wasm true, dart2js false
+
+// Per-ring, per-direction evidence gate used by the engine:
+LatticeKernels.preferSimdNtt(
+  KernelMode.accelerated,
+  RingParams.mlDsa,
+  inverse: true,
+);                                     // false when the measured gain < 1.5×
+
+// The recorded table backing that gate:
+LatticeKernels.simdNttEvidence(RingParams.fnDsa512, inverse: true);
 ```
+
+Mode semantics for the vector NTT kernel:
+
+| Mode | Behaviour |
+| ---- | --------- |
+| `accelerated` | Split-pass `Int32x4` kernel only where AOT gain ≥ 1.5× and parity holds; typed scalar otherwise |
+| `simd` | Forces the vector kernel when the backend supports `Int32x4` (parity-tested, not necessarily faster) |
+| `optimizedScalar` | Typed staged scalar kernel — no `Int32x4` |
+| `reference` | Oracle recipes (`%` / legacy Barrett) for tests |
+
+All four shipped profiles clear the bar at engine level (ML-KEM 2.05×–2.31×,
+ML-DSA 1.87×–2.12×, FN-DSA 1.51×–1.58×), so `accelerated` selects the vector
+kernel for every profile and direction. `KernelMode.simd` still forces it where
+evidence is absent (toy rings). See [SIMD.md](SIMD.md) §4.
 
 Do not rely on compiler auto-vectorization. Callers should not need a flag to
 get the fast path.

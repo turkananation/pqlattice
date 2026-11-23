@@ -3,8 +3,8 @@
 /// Provides modular reduction (Barrett by default when parameters are ready,
 /// Montgomery domain helpers), dense polynomials and poly-vectors, forward and
 /// inverse NTT for ML-KEM, ML-DSA, and FN-DSA integer rings, basemul (including
-/// ML-KEM pair products), a schoolbook negacyclic oracle, and SIMD-shaped
-/// kernels with scalar parity tests.
+/// ML-KEM pair products), a schoolbook negacyclic oracle, and split-pass
+/// `Int32x4` NTT kernels with bit-exact scalar parity.
 ///
 /// **Acceleration is on by default** ([KernelMode.accelerated]).
 ///

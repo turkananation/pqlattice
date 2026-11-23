@@ -82,10 +82,12 @@ layout, SIMD when available). See [ACCELERATION.md](ACCELERATION.md).
 1. Optimized accelerated kernels are the **product default**.
 2. Reference (`%`, schoolbook) kernels are for **oracles and debug**.
 3. SIMD kernels must match optimized scalar on the same inputs (parity).
-4. Under `KernelMode.accelerated`, use SIMD when `SimdCapability.isLikelyBeneficial`
-   and parity tests cover the target build class; otherwise optimized scalar.
-5. Capability may stay false until AOT evidence exists — that only disables SIMD,
-   not Barrett/NTT acceleration.
+4. Under `KernelMode.accelerated`, use SIMD when `SimdCapability` says the
+   backend lowers `Int32x4` to vector registers, the per-profile AOT gain
+   clears the 1.5× threshold ([SIMD.md](SIMD.md) §4), and bit-exact parity
+   tests cover the profile; otherwise typed scalar.
+5. The backend gate is measured, not aspirational: dart2js is off (2.7×
+   slower), the VM is on, dart2wasm is on and unmeasured.
 6. Public APIs never require callers to touch `Int32x4`.
 
 **Forbidden:** “auto-vectorized NTT”, “guaranteed SIMD speedup on all platforms”.
