@@ -10,6 +10,8 @@ import '../poly/poly_vec.dart';
 import '../ring/ring_params.dart';
 import '../simd/ntt_simd_int32x4.dart';
 import '../simd/ntt_workspace.dart';
+import 'basemul.dart';
+import 'ntt_mont.dart';
 import 'ntt_params.dart';
 import 'ntt_reduce.dart' as red;
 import 'ntt_scalar.dart';
@@ -20,11 +22,13 @@ import 'ntt_scalar.dart';
 /// - Zero-copy API: [forwardInPlace] / [inverseInPlace]
 /// - ML-KEM / ML-DSA: real transforms (pqcrypto tables)
 /// - Hot path uses [ModQ.addFast]/[subFast]/[mulBarrett]
-/// - Optional Montgomery-domain NTT: when [montgomeryParams] is provided and
-///   ready, the entire transform runs in Montgomery domain (inputs converted
-///   on entry, twiddles converted on the fly, outputs converted on exit).
-///   Results are bit-identical to the Barrett/%-path; Montgomery is **not**
-///   the default — it is swappable for parity testing and measured deployment.
+/// - Optional Montgomery-domain NTT: pass `montgomeryParams:
+///   MontgomeryParams.forQ(ring.q)`. Inputs are converted on entry, twiddles
+///   and `n^{-1}` are converted once at construction, and [inverse] converts
+///   back to plain residues. Hats from this engine stay in the Montgomery
+///   domain. Multiply them with [basemul], not with [Basemul.pointwise] or
+///   [Basemul.mlKemPairs]. Results match the default Barrett path.
+///   Montgomery is **not** the default.
 final class NttEngine {
   final RingParams ring;
   final NttParams params;
@@ -45,6 +49,17 @@ final class NttEngine {
   /// Montgomery-form \(n^{-1}\) scale for the ML-DSA accelerated default path.
   int? _mlDsaInvScaleMont;
 
+  /// Montgomery-form \(n^{-1}\) for the opt-in Montgomery-domain engine.
+  /// Null unless [montgomeryParams] was supplied and ready.
+  int? _montInvScale;
+
+  /// Staged NTT lanes. Allocated on the first non-Montgomery transform and
+  /// reused. One transform runs at a time; [forwardVec] and [inverseVec]
+  /// walk polynomials sequentially and share this buffer. About 0.3–0.7 µs
+  /// to allocate at these sizes, which is several percent of an ML-KEM NTT
+  /// and pure overhead when the shape never changes.
+  NttWorkspace? _scratch;
+
   NttEngine(
     this.ring, {
     NttParams? params,
@@ -54,9 +69,13 @@ final class NttEngine {
        _barrett = BarrettParams.forQ(ring.q),
        _montgomery = montgomeryParams,
        _zetasMont = null {
-    _zetasMont = montgomeryParams != null && montgomeryParams.isReady
-        ? _precomputeMontgomeryZetas(this.params.zetas, montgomeryParams)
-        : null;
+    if (montgomeryParams != null && montgomeryParams.isReady) {
+      _zetasMont = _precomputeMontgomeryZetas(
+        this.params.zetas,
+        montgomeryParams,
+      );
+      _montInvScale = ModQ.toMont(this.params.invNScale, montgomeryParams);
+    }
     if (ring.q == 8380417 && this.params.hasZetas) {
       final mont = MontgomeryParams.forQ(ring.q);
       if (mont.isReady) {
@@ -91,6 +110,10 @@ final class NttEngine {
     return mont != null && mont.isReady;
   }
 
+  /// The Montgomery parameters this engine was built with, or null on the
+  /// default plain-domain engine.
+  MontgomeryParams? get montgomeryParams => _montgomery;
+
   Poly forward(Poly a) {
     _check(a);
     final out = a.clone();
@@ -105,7 +128,40 @@ final class NttEngine {
     return out;
   }
 
-  /// In-place forward NTT (no polynomial allocation; one scratch workspace).
+  /// NTT-domain product of two hats from this engine.
+  ///
+  /// Uses ML-KEM pairs or complete-NTT pointwise, in the same domain as
+  /// [forward]. A Montgomery engine must not be paired with
+  /// [Basemul.pointwise] or [Basemul.mlKemPairs]; those expect plain residues.
+  Poly basemul(Poly aHat, Poly bHat) {
+    final out = Poly.zero(ring);
+    basemulInPlace(out, aHat, bHat);
+    return out;
+  }
+
+  /// In-place form of [basemul]. [dest] is fully overwritten.
+  void basemulInPlace(Poly dest, Poly aHat, Poly bHat) {
+    _check(dest);
+    _check(aHat);
+    _check(bHat);
+    final mont = _montgomery;
+    if (mont != null && mont.isReady) {
+      if (ring.q == 3329 && ring.n == 256) {
+        Basemul.mlKemPairsMontgomeryInPlace(dest, aHat, bHat, mont);
+      } else {
+        Basemul.pointwiseMontgomeryInPlace(dest, aHat, bHat, ring, mont);
+      }
+      return;
+    }
+    if (ring.q == 3329 && ring.n == 256) {
+      Basemul.mlKemPairsInPlace(dest, aHat, bHat);
+    } else {
+      Basemul.pointwiseInPlace(dest, aHat, bHat, ring);
+    }
+  }
+
+  /// In-place forward NTT (no polynomial allocation; reuses this engine's
+  /// scratch workspace).
   ///
   /// Throws [StateError] if twiddle tables are missing. Known profiles never
   /// silently act as the identity transform.
@@ -131,7 +187,8 @@ final class NttEngine {
     _forward(p.coeffs);
   }
 
-  /// In-place inverse NTT (no polynomial allocation; one scratch workspace).
+  /// In-place inverse NTT (no polynomial allocation; reuses this engine's
+  /// scratch workspace).
   ///
   /// Throws [StateError] if twiddle tables are missing.
   void inverseInPlace(Poly p) {
@@ -167,7 +224,7 @@ final class NttEngine {
   /// widest intermediate is `< 2q`), so results are bit-identical either way.
   /// See `doc/SIMD.md` §4.
   void _forward(List<int> coeffs) {
-    final ws = NttWorkspace(ring.n);
+    final ws = _workspace();
     _loadLanes(coeffs, ws.lanes);
     final simd = LatticeKernels.preferSimdNtt(mode, ring, inverse: false);
     if (simd) {
@@ -179,7 +236,7 @@ final class NttEngine {
   }
 
   void _inverse(List<int> coeffs) {
-    final ws = NttWorkspace(ring.n);
+    final ws = _workspace();
     _loadLanes(coeffs, ws.lanes);
     final simd = LatticeKernels.preferSimdNtt(mode, ring, inverse: true);
     if (simd) {
@@ -188,6 +245,15 @@ final class NttEngine {
       _scalarInverse(ws.lanes);
     }
     _storeLanes(ws.lanes, coeffs);
+  }
+
+  /// The engine's staged lanes, created on first use.
+  NttWorkspace _workspace() {
+    final scratch = _scratch;
+    if (scratch != null) return scratch;
+    final created = NttWorkspace(ring.n);
+    _scratch = created;
+    return created;
   }
 
   /// Copies coefficients into workspace lanes.
@@ -457,10 +523,10 @@ final class NttEngine {
   /// -1\), \(\psi^{2n} \equiv 1\) (ψ = 49 for n=512, ψ = 7 for n=1024),
   /// matching Falcon reference constructions.
   ///
-  /// Provenance: product bound raw < q^2 = 151,019,521 < 2^28 — one
-  /// conditional correction in expectation, the `%` escape retained as a
-  /// defensive guard but unreachable for in-range products; certified by the
-  /// exhaustive residue test over all 12289^2 products in
+  /// Provenance: product bound raw < q^2 = 151,019,521 < 2^28. The estimate
+  /// is in `[0, 2q)` and the shipped correction is one mask subtraction, with
+  /// no division. Certified by the exhaustive residue test over all 12289^2
+  /// products in
   /// test/fndsa_exhaustive_residue_test.dart.
   static int fnDsaReduceK27(int prod) => red.fnDsaReduceK27(prod);
 
@@ -510,176 +576,77 @@ final class NttEngine {
     }
   }
 
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // Montgomery-domain NTT variants
-  //
-  // Each converts the input polynomial to Montgomery domain on entry, runs the
-  // same butterfly structure with _mul (which uses montMul when _useMontgomery
-  // is true), and converts back on exit. Twiddles are converted to Montgomery
-  // domain on the fly via ModQ.toMont. Results are bit-identical to the
-  // Barrett/%-path; Montgomery is opt-in and never the default.
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Montgomery-domain NTT. Opt-in. Twiddles and n^{-1} were converted once
+  // in the constructor. The butterfly runs on the engine scratch lanes.
+  // Forward leaves Montgomery-domain coefficients in the polynomial.
+  // Inverse converts them back to plain residues.
 
   void _montgomeryForward(List<int> f) {
-    final q = ring.q;
     final mont = _montgomery!;
-    final n = f.length;
-
-    // Convert input to Montgomery domain: f_m[i] = f[i] * R mod q
-    for (var i = 0; i < n; i++) {
-      f[i] = ModQ.toMont(f[i], mont);
-    }
-
-    if (ring.q == 3329 && ring.n == 256) {
-      _mlKemForwardMontgomery(f, mont);
-    } else if (ring.q == 8380417 && ring.n == 256) {
-      _mlDsaForwardMontgomery(f, mont);
-    } else if (ring.q == 12289 && (ring.n == 512 || ring.n == 1024)) {
-      _fnDsaForwardMontgomery(f, mont);
-    } else {
-      throw StateError('Montgomery forward NTT not implemented for q=$q, n=$n');
-    }
-    // Output remains in Montgomery domain. Caller (inverse / pointwiseMontgomery)
-    // expects Montgomery-domain values. Use ModQ.fromMont to observe in normal
-    // domain.
+    final zetas = _requireMontZetas();
+    final ws = _workspace();
+    _loadLanes(f, ws.lanes);
+    montToDomain(ws.lanes, mont);
+    _montForward(ws.lanes, zetas);
+    _storeLanes(ws.lanes, f);
   }
 
   void _montgomeryInverse(List<int> f) {
-    final q = ring.q;
     final mont = _montgomery!;
-    final n = f.length;
-
-    // Input is expected in Montgomery domain (output of forward or
-    // pointwiseMontgomery). Do NOT convert again.
-    if (ring.q == 3329 && ring.n == 256) {
-      _mlKemInverseMontgomery(f, mont);
-    } else if (ring.q == 8380417 && ring.n == 256) {
-      _mlDsaInverseMontgomery(f, mont);
-    } else if (ring.q == 12289 && (ring.n == 512 || ring.n == 1024)) {
-      _fnDsaInverseMontgomery(f, mont);
-    } else {
-      throw StateError('Montgomery inverse NTT not implemented for q=$q, n=$n');
+    final zetas = _requireMontZetas();
+    final inv = _montInvScale;
+    if (inv == null) {
+      throw StateError('Montgomery inverse scale was not prepared');
     }
-
-    // Convert output back to normal domain: f[i] = f_m[i] * R⁻¹ mod q
-    for (var i = 0; i < n; i++) {
-      f[i] = ModQ.fromMont(f[i], mont);
-    }
+    final ws = _workspace();
+    _loadLanes(f, ws.lanes);
+    _montInverse(ws.lanes, zetas, inv);
+    montFromDomain(ws.lanes, mont);
+    _storeLanes(ws.lanes, f);
   }
 
-  void _mlKemForwardMontgomery(List<int> f, MontgomeryParams mont) {
-    final q = ring.q;
-    final zetasMont = _zetasMont!;
-    var k = 1;
-    for (var len = 128; len >= 2; len >>= 1) {
-      for (var start = 0; start < 256; start += 2 * len) {
-        final zeta = zetasMont[k++];
-        for (var j = start; j < start + len; j++) {
-          final t = _mul(zeta, f[j + len]);
-          f[j + len] = ModQ.subFast(f[j], t, q);
-          f[j] = ModQ.addFast(f[j], t, q);
-        }
-      }
+  List<int> _requireMontZetas() {
+    final zetas = _zetasMont;
+    if (zetas == null) {
+      throw StateError('Montgomery twiddles were not prepared');
     }
+    return zetas;
   }
 
-  void _mlKemInverseMontgomery(List<int> f, MontgomeryParams mont) {
-    final q = ring.q;
-    final zetasMont = _zetasMont!;
-    var k = 127;
-    final inv = ModQ.toMont(params.invNScale, mont);
-    for (var len = 2; len <= 128; len <<= 1) {
-      for (var start = 0; start < 256; start += 2 * len) {
-        final zeta = zetasMont[k--];
-        for (var j = start; j < start + len; j++) {
-          final t = f[j];
-          f[j] = ModQ.addFast(t, f[j + len], q);
-          f[j + len] = _mul(zeta, ModQ.subFast(f[j + len], t, q));
-        }
-      }
-    }
-    for (var i = 0; i < 256; i++) {
-      f[i] = _mul(f[i], inv);
-    }
-  }
-
-  void _mlDsaForwardMontgomery(List<int> a, MontgomeryParams mont) {
-    final q = ring.q;
-    final zetasMont = _zetasMont!;
-    var k = 1;
-    for (var len = 128; len >= 1; len >>= 1) {
-      for (var start = 0; start < 256; start += 2 * len) {
-        final zeta = zetasMont[k++];
-        for (var j = start; j < start + len; j++) {
-          final t = _mul(zeta, a[j + len]);
-          a[j + len] = ModQ.subFast(a[j], t, q);
-          a[j] = ModQ.addFast(a[j], t, q);
-        }
-      }
-    }
-  }
-
-  void _mlDsaInverseMontgomery(List<int> a, MontgomeryParams mont) {
-    final q = ring.q;
-    final zetasMont = _zetasMont!;
-    var k = 255;
-    final inv = ModQ.toMont(params.invNScale, mont);
-    for (var len = 1; len < 256; len <<= 1) {
-      for (var start = 0; start < 256; start += 2 * len) {
-        var zeta = zetasMont[k--];
-        zeta = q - zeta; // -zetas[k] mod q in Montgomery domain
-        for (var j = start; j < start + len; j++) {
-          final t = a[j];
-          final u = a[j + len];
-          a[j] = ModQ.addFast(t, u, q);
-          a[j + len] = _mul(ModQ.subFast(t, u, q), zeta);
-        }
-      }
-    }
-    for (var i = 0; i < 256; i++) {
-      a[i] = _mul(a[i], inv);
-    }
-  }
-
-  void _fnDsaForwardMontgomery(List<int> a, MontgomeryParams mont) {
+  void _montForward(Int32List lanes, List<int> zetas) {
     final q = ring.q;
     final n = ring.n;
-    final zetasMont = _zetasMont!;
-    var k = 1;
-    for (var len = n >> 1; len >= 1; len >>= 1) {
-      for (var start = 0; start < n; start += 2 * len) {
-        final zeta = zetasMont[k++];
-        for (var j = start; j < start + len; j++) {
-          final t = _mul(zeta, a[j + len]);
-          a[j + len] = ModQ.subFast(a[j], t, q);
-          a[j] = ModQ.addFast(a[j], t, q);
-        }
-      }
+    if (q == 3329 && n == 256) {
+      mlKemMontForward(lanes, zetas);
+      return;
     }
+    if (q == 8380417 && n == 256) {
+      mlDsaMontForward(lanes, zetas);
+      return;
+    }
+    if (q == 12289 && (n == 512 || n == 1024)) {
+      fnDsaMontForward(lanes, zetas);
+      return;
+    }
+    throw StateError('Montgomery forward NTT not implemented for q=$q, n=$n');
   }
 
-  void _fnDsaInverseMontgomery(List<int> a, MontgomeryParams mont) {
+  void _montInverse(Int32List lanes, List<int> zetas, int inv) {
     final q = ring.q;
     final n = ring.n;
-    final zetasMont = _zetasMont!;
-    var k = n - 1;
-    final inv = ModQ.toMont(params.invNScale, mont);
-    // Inverse uses conjugate powers: walk the same table backwards with -zeta.
-    for (var len = 1; len < n; len <<= 1) {
-      for (var start = 0; start < n; start += 2 * len) {
-        var zeta = zetasMont[k--];
-        zeta = q - zeta; // -zeta mod q in Montgomery domain
-        for (var j = start; j < start + len; j++) {
-          final t = a[j];
-          final u = a[j + len];
-          a[j] = ModQ.addFast(t, u, q);
-          a[j + len] = _mul(ModQ.subFast(t, u, q), zeta);
-        }
-      }
+    if (q == 3329 && n == 256) {
+      mlKemMontInverse(lanes, zetas, inv);
+      return;
     }
-    for (var i = 0; i < n; i++) {
-      a[i] = _mul(a[i], inv);
+    if (q == 8380417 && n == 256) {
+      mlDsaMontInverse(lanes, zetas, inv);
+      return;
     }
+    if (q == 12289 && (n == 512 || n == 1024)) {
+      fnDsaMontInverse(lanes, zetas, inv);
+      return;
+    }
+    throw StateError('Montgomery inverse NTT not implemented for q=$q, n=$n');
   }
 
   void _check(Poly a) {

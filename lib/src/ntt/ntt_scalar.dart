@@ -37,9 +37,9 @@ final class NttScalar {
           final fj = f[j];
           final t = mlKemMulBarrett(zeta, f[j + len]);
           final diff = fj - t;
-          f[j + len] = diff < 0 ? diff + q : diff;
+          f[j + len] = maskCadd(diff, q);
           final sum = fj + t;
-          f[j] = sum >= q ? sum - q : sum;
+          f[j] = maskCsub(sum, q);
         }
       }
     }
@@ -56,9 +56,9 @@ final class NttScalar {
           final fj = f[j];
           final fjl = f[j + len];
           final sum = fj + fjl;
-          f[j] = sum >= q ? sum - q : sum;
+          f[j] = maskCsub(sum, q);
           final diff = fjl - fj;
-          final reducedDiff = diff < 0 ? diff + q : diff;
+          final reducedDiff = maskCadd(diff, q);
           f[j + len] = mlKemMulBarrett(zeta, reducedDiff);
         }
       }
@@ -83,9 +83,9 @@ final class NttScalar {
           final t = mlDsaRedc(zetaM * a[j + len]);
           final fj = a[j];
           final diff = fj - t;
-          a[j + len] = diff < 0 ? diff + q : diff;
+          a[j + len] = maskCadd(diff, q);
           final sum = fj + t;
-          a[j] = sum >= q ? sum - q : sum;
+          a[j] = maskCsub(sum, q);
         }
       }
     }
@@ -103,9 +103,9 @@ final class NttScalar {
           final t = a[j];
           final u = a[j + len];
           final sum = t + u;
-          a[j] = sum >= q ? sum - q : sum;
+          a[j] = maskCsub(sum, q);
           final diff = t - u;
-          final d = diff < 0 ? diff + q : diff;
+          final d = maskCadd(diff, q);
           a[j + len] = mlDsaRedc(zetaM * d);
         }
       }
@@ -126,21 +126,16 @@ final class NttScalar {
           final t = fnDsaReduceK27(zeta * a[j + len]);
           final fj = a[j];
           final diff = fj - t;
-          a[j + len] = diff < 0 ? diff + q : diff;
+          a[j + len] = maskCadd(diff, q);
           final sum = fj + t;
-          a[j] = sum >= q ? sum - q : sum;
+          a[j] = maskCsub(sum, q);
         }
       }
     }
   }
 
   /// FN-DSA inverse, `q = 12289`, `n ∈ {512, 1024}`, conjugate twiddles.
-  static void fnDsaInverse(
-    Int32List a,
-    int n,
-    List<int> zetas,
-    int invScale,
-  ) {
+  static void fnDsaInverse(Int32List a, int n, List<int> zetas, int invScale) {
     const q = 12289;
     var ik = n - 1;
     for (var len = 1; len < n; len <<= 1) {
@@ -150,9 +145,9 @@ final class NttScalar {
           final t = a[j];
           final u = a[j + len];
           final sum = t + u;
-          a[j] = sum >= q ? sum - q : sum;
+          a[j] = maskCsub(sum, q);
           final diff = t - u;
-          final d = diff < 0 ? diff + q : diff;
+          final d = maskCadd(diff, q);
           a[j + len] = fnDsaReduceK27(d * zeta);
         }
       }

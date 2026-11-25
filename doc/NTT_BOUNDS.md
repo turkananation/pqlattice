@@ -38,10 +38,16 @@ Montgomery-domain NTT is **implemented, tested, and swappable** but **not
 default**. Construct `NttEngine` with `montgomeryParams: MontgomeryParams.forQ(q)`
 to run the entire transform in Montgomery domain:
 
-- Inputs converted to Montgomery domain on entry via `ModQ.toMont`.
-- Twiddles converted to Montgomery domain on the fly via `ModQ.toMont`.
-- Butterfly muls use `ModQ.montMul` (Montgomery domain).
-- Outputs converted back to normal domain on exit via `ModQ.fromMont`.
+- Inputs converted to Montgomery domain on entry via `ModQ.toMont`, on the
+  engine's staged `Int32List` lanes.
+- Twiddles and `n^{-1}` converted once at construction, not per butterfly.
+- ML-KEM gammas converted once per `MontgomeryParams` value and reused.
+- Butterfly products use the profile Montgomery multiply (R = 2^16 mask
+  reduction, or the ML-DSA REDC). Add and sub are mask corrections.
+- Outputs converted back to plain residues on inverse via `ModQ.fromMont`.
+- `NttEngine.basemul` selects pair or pointwise multiplication in that same
+  domain. Plain `Basemul.pointwise` / `Basemul.mlKemPairs` expect plain-domain
+  hats and must not be used with a Montgomery engine.
 
 Results are **bit-identical** to the Barrett/`-path`; Montgomery is opt-in for
 parity testing and measured deployment. Fail-closed: unready `MontgomeryParams`

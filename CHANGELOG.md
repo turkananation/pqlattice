@@ -38,6 +38,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Basemul hot loops specialize on packed lanes.** `pointwise` and
+  `mlKemPairs` call an `Int16List` or `Int32List` callee when the
+  polynomials are packed. The reduction recipes are unchanged. A plain
+  `List<int>` still runs the same recipe.
+- **`NttEngine` reuses one scratch workspace** across forward and inverse
+  calls instead of allocating staged lanes on every transform.
+- **Hot reductions no longer divide.** ML-KEM Barrett uses a sign mask
+  (`r` lands in `[-70, q)`), FN-DSA k=27 uses one mask subtraction, and
+  ML-DSA REDC uses one mask subtraction. Residues match `%` on the
+  certified bounds.
+- **`PolyOps` add, sub, and neg** on packed lanes use that same mask
+  correction. `scaleInto` uses the profile product. A plain `List` still
+  fully reduces.
+- **Montgomery opt-in is a complete setup.** Twiddles and `n^{-1}` are
+  converted once at construction, ML-KEM gammas once per parameter set,
+  and the butterflies run on the staged lanes. `NttEngine.basemul` /
+  `basemulInPlace` multiply hats in the engine's domain. Montgomery stays
+  off unless `montgomeryParams` is passed.
+
 - **SIMD backend gate rewritten**: `SimdCapability.supportsInt32x4` is now a
   measured backend decision — Dart VM **on**, dart2wasm **on** (`v128`, no
   speed claim; unmeasured locally), dart2js **off** (emulated `Int32x4`

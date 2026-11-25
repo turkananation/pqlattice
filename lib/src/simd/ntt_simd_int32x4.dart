@@ -66,9 +66,9 @@ final class NttSimdInt32x4 {
           final fj = f[j];
           final t = mlKemMulBarrett(zeta, f[j + len]);
           final diff = fj - t;
-          f[j + len] = diff < 0 ? diff + q : diff;
+          f[j + len] = maskCadd(diff, q);
           final sum = fj + t;
-          f[j] = sum >= q ? sum - q : sum;
+          f[j] = maskCsub(sum, q);
         }
       }
     }
@@ -90,9 +90,9 @@ final class NttSimdInt32x4 {
         final fj = f[j];
         final fjl = f[j + 2];
         final sum = fj + fjl;
-        f[j] = sum >= q ? sum - q : sum;
+        f[j] = maskCsub(sum, q);
         final diff = fjl - fj;
-        final reducedDiff = diff < 0 ? diff + q : diff;
+        final reducedDiff = maskCadd(diff, q);
         f[j + 2] = mlKemMulBarrett(zeta, reducedDiff);
       }
     }
@@ -141,9 +141,9 @@ final class NttSimdInt32x4 {
           final t = mlDsaRedc(zetaM * f[j + len]);
           final fj = f[j];
           final diff = fj - t;
-          f[j + len] = diff < 0 ? diff + q : diff;
+          f[j + len] = maskCadd(diff, q);
           final sum = fj + t;
-          f[j] = sum >= q ? sum - q : sum;
+          f[j] = maskCsub(sum, q);
         }
       }
     }
@@ -151,11 +151,7 @@ final class NttSimdInt32x4 {
 
   /// ML-DSA inverse: vector combine then REDC multiply pass with conjugated
   /// Montgomery twiddles.
-  static void mlDsaInverse(
-    NttWorkspace ws,
-    List<int> zetasMont,
-    int invMont,
-  ) {
+  static void mlDsaInverse(NttWorkspace ws, List<int> zetasMont, int invMont) {
     const q = 8380417;
     const n = 256;
     final f = ws.lanes;
@@ -171,9 +167,9 @@ final class NttSimdInt32x4 {
           final t = f[j];
           final u = f[j + len];
           final sum = t + u;
-          f[j] = sum >= q ? sum - q : sum;
+          f[j] = maskCsub(sum, q);
           final diff = t - u;
-          final d = diff < 0 ? diff + q : diff;
+          final d = maskCadd(diff, q);
           f[j + len] = mlDsaRedc(zetaM * d);
         }
       }
@@ -223,9 +219,9 @@ final class NttSimdInt32x4 {
           final t = fnDsaReduceK27(zeta * f[j + len]);
           final fj = f[j];
           final diff = fj - t;
-          f[j + len] = diff < 0 ? diff + q : diff;
+          f[j + len] = maskCadd(diff, q);
           final sum = fj + t;
-          f[j] = sum >= q ? sum - q : sum;
+          f[j] = maskCsub(sum, q);
         }
       }
     }
@@ -255,9 +251,9 @@ final class NttSimdInt32x4 {
           final t = f[j];
           final u = f[j + len];
           final sum = t + u;
-          f[j] = sum >= q ? sum - q : sum;
+          f[j] = maskCsub(sum, q);
           final diff = t - u;
-          final d = diff < 0 ? diff + q : diff;
+          final d = maskCadd(diff, q);
           f[j + len] = fnDsaReduceK27(d * zeta);
         }
       }

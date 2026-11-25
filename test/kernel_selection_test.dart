@@ -87,11 +87,7 @@ void main() {
       // A toy ring is never in the evidence table, but simd still runs it.
       const toy = RingParams(q: 17, n: 16, name: 'toy');
       expect(
-        LatticeKernels.preferSimdNtt(
-          KernelMode.simd,
-          toy,
-          inverse: false,
-        ),
+        LatticeKernels.preferSimdNtt(KernelMode.simd, toy, inverse: false),
         isTrue,
       );
       expect(

@@ -91,8 +91,27 @@ final ntt = NttEngine(
 
 Poly hat = ntt.forward(p);
 Poly back = ntt.inverse(hat);
+Poly product = ntt.inverse(ntt.basemul(ntt.forward(a), ntt.forward(b)));
 PolyVec hats = ntt.forwardVec(v);
 ```
+
+`basemul` / `basemulInPlace` multiply two hats from **this** engine. That is
+the call to use. It picks ML-KEM pairs or complete-NTT pointwise, and it
+stays in the engine's domain.
+
+Montgomery is opt-in and not the default. The engine owns the domain
+conversion, the twiddles, and the inverse scale:
+
+```dart
+final mont = MontgomeryParams.forQ(ring.q); // throws via the engine if not ready
+final ntt = NttEngine(ring, montgomeryParams: mont);
+final c = ntt.inverse(ntt.basemul(ntt.forward(a), ntt.forward(b)));
+```
+
+Hats from that engine are Montgomery-domain coefficients.
+`Basemul.pointwise` and `Basemul.mlKemPairs` expect plain-domain hats. Mixing
+them with a Montgomery engine is a domain error. `ntt.basemul` does not mix
+them. `ntt.montgomeryParams` is the parameter object the engine was given.
 
 - Scalar path is canonical.
 - Optional SIMD must match scalar; see [VM_COMPILER_BOUNDARY.md](VM_COMPILER_BOUNDARY.md).

@@ -68,7 +68,8 @@ final class LatticeKernels {
     final n = ring.n;
     if (q == 3329 && n == 256) return true; // ML-KEM: 2.31× fwd / 2.05× inv
     if (q == 8380417 && n == 256) return true; // ML-DSA: 2.12× / 1.87×
-    if (q == 12289 && (n == 512 || n == 1024)) return true; // FN-DSA: 1.51×–1.58×
+    if (q == 12289 && (n == 512 || n == 1024))
+      return true; // FN-DSA: 1.51×–1.58×
     return false;
   }
 

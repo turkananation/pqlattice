@@ -172,7 +172,11 @@ void main() {
               reason: '${ring.name} ${entry.key.name} forward trial $trial',
             );
             // Input must not be mutated by the allocating API.
-            expect(base.coeffs, values, reason: '${entry.key.name} mutated input');
+            expect(
+              base.coeffs,
+              values,
+              reason: '${entry.key.name} mutated input',
+            );
             final back = entry.value.inverse(out);
             expect(
               back.coeffs,
@@ -196,7 +200,11 @@ void main() {
           final q1 = Poly.fromCoeffs(ring, values);
           final invAllocated = engine.inverse(q1).coeffs;
           engine.inverseInPlace(q1);
-          expect(q1.coeffs, invAllocated, reason: 'inverseInPlace trial $trial');
+          expect(
+            q1.coeffs,
+            invAllocated,
+            reason: 'inverseInPlace trial $trial',
+          );
         }
       });
     });
