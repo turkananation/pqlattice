@@ -58,8 +58,9 @@ int _barrett(int prod, int q, int mu, int shift) {
 
 /// pqcrypto-parity ceil-quotient single-guard chain (ML-KEM 20159/26).
 ///
-/// Mirrors `NttEngine._mulBarrettMlKem`: one guard fires the `%` escape;
-/// in-range products correct in a single conditional.
+/// Residue model of the ML-KEM ceil-quotient chain. The shipped hot path
+/// replaces the `%` escape with a sign mask; both equal `prod % q` inside
+/// the bound.
 int _barrettCeilSingle(int prod, int q, int v, int shift) {
   var quot = (prod * v) >> shift;
   var r = prod - quot * q;
@@ -69,8 +70,9 @@ int _barrettCeilSingle(int prod, int q, int v, int shift) {
 
 /// FN-DSA k=27 chain (mu = 10921 = floor(2^27 / 12289)).
 ///
-/// Mirrors `NttEngine.fnDsaReduceK27`: two positive-correction steps, a
-/// negative fix, then the defensive escape guard.
+/// Residue model of the FN-DSA k=27 chain. The shipped hot path is one
+/// mask subtraction; this model keeps the extra guards, which do not fire
+/// inside the bound, and still equals `prod % q`.
 int _barrettFnDsa(int prod, int q, int mu, int shift) {
   var quot = (prod * mu) >> shift;
   var r = prod - quot * q;

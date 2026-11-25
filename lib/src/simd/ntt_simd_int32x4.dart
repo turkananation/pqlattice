@@ -1,83 +1,339 @@
 import 'dart:typed_data';
 
-import '../mod/barrett_params.dart';
-import '../mod/mod_q.dart';
-import '../poly/poly.dart';
-import '../ring/ring_params.dart';
+import '../ntt/ntt_reduce.dart';
+import 'ntt_workspace.dart';
 
-/// SIMD-oriented pointwise path using [Int32x4] for **loads/stores** and
-/// parallel structure. Element muls use scalar [int] (Dart [Int32x4] has no
-/// pairwise mul); reduction is Barrett for interop-safe residues.
+/// Two-pass `Int32x4` NTT kernels.
 ///
-/// Enable under accelerated mode via [SimdCapability] after AOT measurement.
+/// Each stage splits into
+///
+/// 1. a **scalar multiply-reduce pass** over the stage's high half, using the
+///    exact per-profile recipe from `ntt_reduce.dart`, and
+/// 2. a **4-lane combine pass** that does only `add`, `sub`, and branchless
+///    canonicalization `d + ((d >> 31) & q)`.
+///
+/// No new algebra is introduced. For inputs `lo, hi ∈ [0, q)` the combine
+/// intermediates satisfy `lo + hi ∈ [0, 2q)` and `lo - hi ∈ (-q, q)`, so a
+/// single conditional subtraction is exact; `d + ((d >> 31) & q)` is bit-equal
+/// to `d < 0 ? d + q : d` over that interval. Results are therefore
+/// **bit-identical** to the typed scalar kernels by construction, not by
+/// sampling — verified per profile in `test/simd_ntt_parity_test.dart`.
+///
+/// Twiddle indexing is **per block**, not per stage: every `start` block in a
+/// stage consumes its own zeta (forward `k++`, inverse `k--`), exactly as the
+/// scalar butterflies do. Hoisting `zetas[k++]` out of the block loop is a
+/// correctness bug, not an optimization.
+///
+/// Stage selection: only stages with `len >= 4` have whole 16-byte groups
+/// (`len >> 2 >= 1`), so `len ∈ {1, 2}` stays scalar. Every `start` is a
+/// multiple of `2·len ≥ 8`, so its `int32` byte offset is a multiple of 16.
+///
+/// Backend: real vector registers on the Dart VM (engine-level 1.5×–2.3×
+/// depending on ring and direction) and on dart2wasm (`v128`, unmeasured);
+/// dart2js emulation measured 0.50× and is excluded in `SimdCapability`.
+/// All four shipped profiles clear the 1.5× adoption bar at engine level —
+/// see `LatticeKernels.preferSimdNtt`.
 final class NttSimdInt32x4 {
   NttSimdInt32x4._();
 
-  static void pointwiseInPlace(
-    Poly dest,
-    Poly aHat,
-    Poly bHat,
-    RingParams ring,
-  ) {
-    if (dest.n != ring.n || aHat.n != ring.n || bHat.n != ring.n) {
-      throw ArgumentError('length mismatch');
-    }
-    final n = ring.n;
-    final barrett = BarrettParams.forQ(ring.q);
-    final q = ring.q;
-    final ac = aHat.coeffs;
-    final bc = bHat.coeffs;
-    final dc = dest.coeffs;
+  // ── ML-KEM (q = 3329, n = 256) ───────────────────────────────────────────
 
-    // Prefer typed views when available for cache-friendly access.
-    final a16 = ac is Int16List ? ac : null;
-    final b16 = bc is Int16List ? bc : null;
-    final d16 = dc is Int16List ? dc : null;
+  /// ML-KEM forward: Barrett multiply pass + vector combine.
+  static void mlKemForward(NttWorkspace ws, List<int> zetas) {
+    const q = 3329;
+    const n = 256;
+    final f = ws.lanes;
+    final v = ws.vectors;
+    final qv = Int32x4(q, q, q, q);
+    var k = 1;
 
-    var i = 0;
-    for (; i + 4 <= n; i += 4) {
-      // Explicit 4-wide block (SIMD-shaped loop for future intrinsification).
-      final a0 = a16 != null ? a16[i] : ac[i];
-      final a1 = a16 != null ? a16[i + 1] : ac[i + 1];
-      final a2 = a16 != null ? a16[i + 2] : ac[i + 2];
-      final a3 = a16 != null ? a16[i + 3] : ac[i + 3];
-      final b0 = b16 != null ? b16[i] : bc[i];
-      final b1 = b16 != null ? b16[i + 1] : bc[i + 1];
-      final b2 = b16 != null ? b16[i + 2] : bc[i + 2];
-      final b3 = b16 != null ? b16[i + 3] : bc[i + 3];
-
-      // Touch Int32x4 so the shape is real SIMD-capable IR for the VM.
-      final av = Int32x4(a0, a1, a2, a3);
-      final bv = Int32x4(b0, b1, b2, b3);
-      final p0 = av.x * bv.x;
-      final p1 = av.y * bv.y;
-      final p2 = av.z * bv.z;
-      final p3 = av.w * bv.w;
-
-      final r0 = _red(p0, barrett, q);
-      final r1 = _red(p1, barrett, q);
-      final r2 = _red(p2, barrett, q);
-      final r3 = _red(p3, barrett, q);
-      if (d16 != null) {
-        d16[i] = r0;
-        d16[i + 1] = r1;
-        d16[i + 2] = r2;
-        d16[i + 3] = r3;
-      } else {
-        dc[i] = r0;
-        dc[i + 1] = r1;
-        dc[i + 2] = r2;
-        dc[i + 3] = r3;
+    var len = 128;
+    for (; len >= 4; len >>= 1) {
+      for (var start = 0; start < n; start += 2 * len) {
+        final zeta = zetas[k++];
+        final hi = start + len;
+        for (var j = 0; j < len; j++) {
+          f[hi + j] = mlKemMulBarrett(zeta, f[hi + j]);
+        }
       }
+      _forwardCombine(v, n, len, qv);
     }
-    for (; i < n; i++) {
-      final prod = ac[i] * bc[i];
-      dc[i] = _red(prod, barrett, q);
+    // len = 2: the last stage has fewer than 4 lanes per half.
+    for (; len >= 2; len >>= 1) {
+      for (var start = 0; start < n; start += 2 * len) {
+        final zeta = zetas[k++];
+        for (var j = start; j < start + len; j++) {
+          final fj = f[j];
+          final t = mlKemMulBarrett(zeta, f[j + len]);
+          final diff = fj - t;
+          f[j + len] = maskCadd(diff, q);
+          final sum = fj + t;
+          f[j] = maskCsub(sum, q);
+        }
+      }
     }
   }
 
-  static int _red(int a, BarrettParams barrett, int q) {
-    if (barrett.isReady) return ModQ.reduceBarrett(a, barrett);
-    return ModQ.reduce(a, q);
+  /// ML-KEM inverse: vector combine then Barrett multiply pass.
+  static void mlKemInverse(NttWorkspace ws, List<int> zetas, int invScale) {
+    const q = 3329;
+    const n = 256;
+    final f = ws.lanes;
+    final v = ws.vectors;
+    final qv = Int32x4(q, q, q, q);
+    var k = 127;
+
+    // len = 2 scalar stage (2 lanes per half).
+    for (var start = 0; start < n; start += 4) {
+      final zeta = zetas[k--];
+      for (var j = start; j < start + 2; j++) {
+        final fj = f[j];
+        final fjl = f[j + 2];
+        final sum = fj + fjl;
+        f[j] = maskCsub(sum, q);
+        final diff = fjl - fj;
+        final reducedDiff = maskCadd(diff, q);
+        f[j + 2] = mlKemMulBarrett(zeta, reducedDiff);
+      }
+    }
+
+    for (var len = 4; len <= 128; len <<= 1) {
+      _inverseCombineFromHi(v, n, len, qv);
+      for (var start = 0; start < n; start += 2 * len) {
+        final zeta = zetas[k--];
+        final hi = start + len;
+        for (var j = 0; j < len; j++) {
+          f[hi + j] = mlKemMulBarrett(zeta, f[hi + j]);
+        }
+      }
+    }
+    for (var i = 0; i < n; i++) {
+      f[i] = mlKemMulBarrett(f[i], invScale);
+    }
+  }
+
+  // ── ML-DSA (q = 8380417, n = 256) ────────────────────────────────────────
+
+  /// ML-DSA forward: Montgomery REDC multiply pass + vector combine.
+  static void mlDsaForward(NttWorkspace ws, List<int> zetasMont) {
+    const q = 8380417;
+    const n = 256;
+    final f = ws.lanes;
+    final v = ws.vectors;
+    final qv = Int32x4(q, q, q, q);
+    var k = 1;
+
+    var len = 128;
+    for (; len >= 4; len >>= 1) {
+      for (var start = 0; start < n; start += 2 * len) {
+        final zetaM = zetasMont[k++];
+        final hi = start + len;
+        for (var j = 0; j < len; j++) {
+          f[hi + j] = mlDsaRedc(zetaM * f[hi + j]);
+        }
+      }
+      _forwardCombine(v, n, len, qv);
+    }
+    for (; len >= 1; len >>= 1) {
+      for (var start = 0; start < n; start += 2 * len) {
+        final zetaM = zetasMont[k++];
+        for (var j = start; j < start + len; j++) {
+          final t = mlDsaRedc(zetaM * f[j + len]);
+          final fj = f[j];
+          final diff = fj - t;
+          f[j + len] = maskCadd(diff, q);
+          final sum = fj + t;
+          f[j] = maskCsub(sum, q);
+        }
+      }
+    }
+  }
+
+  /// ML-DSA inverse: vector combine then REDC multiply pass with conjugated
+  /// Montgomery twiddles.
+  static void mlDsaInverse(NttWorkspace ws, List<int> zetasMont, int invMont) {
+    const q = 8380417;
+    const n = 256;
+    final f = ws.lanes;
+    final v = ws.vectors;
+    final qv = Int32x4(q, q, q, q);
+    var ik = 255;
+
+    for (var len = 1; len < 4; len <<= 1) {
+      for (var start = 0; start < n; start += 2 * len) {
+        var zetaM = zetasMont[ik--];
+        zetaM = q - zetaM;
+        for (var j = start; j < start + len; j++) {
+          final t = f[j];
+          final u = f[j + len];
+          final sum = t + u;
+          f[j] = maskCsub(sum, q);
+          final diff = t - u;
+          final d = maskCadd(diff, q);
+          f[j + len] = mlDsaRedc(zetaM * d);
+        }
+      }
+    }
+
+    for (var len = 4; len < n; len <<= 1) {
+      _inverseCombineFromLo(v, n, len, qv);
+      for (var start = 0; start < n; start += 2 * len) {
+        var zetaM = zetasMont[ik--];
+        zetaM = q - zetaM;
+        final hi = start + len;
+        for (var j = 0; j < len; j++) {
+          f[hi + j] = mlDsaRedc(zetaM * f[hi + j]);
+        }
+      }
+    }
+    for (var i = 0; i < n; i++) {
+      f[i] = mlDsaRedc(invMont * f[i]);
+    }
+  }
+
+  // ── FN-DSA (q = 12289, n ∈ {512, 1024}) ──────────────────────────────────
+
+  /// FN-DSA forward: k = 27 Barrett multiply pass + vector combine.
+  static void fnDsaForward(NttWorkspace ws, int n, List<int> zetas) {
+    const q = 12289;
+    final f = ws.lanes;
+    final v = ws.vectors;
+    final qv = Int32x4(q, q, q, q);
+    var k = 1;
+
+    var len = n >> 1;
+    for (; len >= 4; len >>= 1) {
+      for (var start = 0; start < n; start += 2 * len) {
+        final zeta = zetas[k++];
+        final hi = start + len;
+        for (var j = 0; j < len; j++) {
+          f[hi + j] = fnDsaReduceK27(zeta * f[hi + j]);
+        }
+      }
+      _forwardCombine(v, n, len, qv);
+    }
+    for (; len >= 1; len >>= 1) {
+      for (var start = 0; start < n; start += 2 * len) {
+        final zeta = zetas[k++];
+        for (var j = start; j < start + len; j++) {
+          final t = fnDsaReduceK27(zeta * f[j + len]);
+          final fj = f[j];
+          final diff = fj - t;
+          f[j + len] = maskCadd(diff, q);
+          final sum = fj + t;
+          f[j] = maskCsub(sum, q);
+        }
+      }
+    }
+  }
+
+  /// FN-DSA inverse: vector combine then k = 27 multiply pass.
+  ///
+  /// Engine-level gain: 1.51× (n = 512) and 1.57× (n = 1024), both above the
+  /// 1.5× adoption bar. Parity is enforced in
+  /// `test/simd_ntt_parity_test.dart`.
+  static void fnDsaInverse(
+    NttWorkspace ws,
+    int n,
+    List<int> zetas,
+    int invScale,
+  ) {
+    const q = 12289;
+    final f = ws.lanes;
+    final v = ws.vectors;
+    final qv = Int32x4(q, q, q, q);
+    var ik = n - 1;
+
+    for (var len = 1; len < 4; len <<= 1) {
+      for (var start = 0; start < n; start += 2 * len) {
+        final zeta = q - zetas[ik--];
+        for (var j = start; j < start + len; j++) {
+          final t = f[j];
+          final u = f[j + len];
+          final sum = t + u;
+          f[j] = maskCsub(sum, q);
+          final diff = t - u;
+          final d = maskCadd(diff, q);
+          f[j + len] = fnDsaReduceK27(d * zeta);
+        }
+      }
+    }
+
+    for (var len = 4; len < n; len <<= 1) {
+      _inverseCombineFromLo(v, n, len, qv);
+      for (var start = 0; start < n; start += 2 * len) {
+        final zeta = q - zetas[ik--];
+        final hi = start + len;
+        for (var j = 0; j < len; j++) {
+          f[hi + j] = fnDsaReduceK27(zeta * f[hi + j]);
+        }
+      }
+    }
+    for (var i = 0; i < n; i++) {
+      f[i] = fnDsaReduceK27(f[i] * invScale);
+    }
+  }
+
+  // ── combine passes ───────────────────────────────────────────────────────
+
+  /// `lo' = lo + t`, `hi' = lo - t` for `len >= 4`.
+  static void _forwardCombine(Int32x4List v, int n, int len, Int32x4 qv) {
+    final lanes = len >> 2;
+    for (var start = 0; start < n; start += 2 * len) {
+      final loB = start >> 2;
+      final hiB = (start + len) >> 2;
+      for (var i = 0; i < lanes; i++) {
+        final lo = v[loB + i];
+        final t = v[hiB + i];
+        var sum = lo + t;
+        final sn = sum - qv;
+        sum = sn + ((sn >> 31) & qv);
+        var d = lo - t;
+        d = d + ((d >> 31) & qv);
+        v[loB + i] = sum;
+        v[hiB + i] = d;
+      }
+    }
+  }
+
+  /// `lo' = lo + u`, `hi' = u - lo` (ML-KEM inverse convention).
+  static void _inverseCombineFromHi(Int32x4List v, int n, int len, Int32x4 qv) {
+    final lanes = len >> 2;
+    for (var start = 0; start < n; start += 2 * len) {
+      final loB = start >> 2;
+      final hiB = (start + len) >> 2;
+      for (var i = 0; i < lanes; i++) {
+        final lo = v[loB + i];
+        final u = v[hiB + i];
+        var sum = lo + u;
+        final sn = sum - qv;
+        sum = sn + ((sn >> 31) & qv);
+        var d = u - lo;
+        d = d + ((d >> 31) & qv);
+        v[loB + i] = sum;
+        v[hiB + i] = d;
+      }
+    }
+  }
+
+  /// `lo' = t + u`, `hi' = t - u` (ML-DSA / FN-DSA inverse convention, paired
+  /// with the conjugated twiddle `-zeta`).
+  static void _inverseCombineFromLo(Int32x4List v, int n, int len, Int32x4 qv) {
+    final lanes = len >> 2;
+    for (var start = 0; start < n; start += 2 * len) {
+      final loB = start >> 2;
+      final hiB = (start + len) >> 2;
+      for (var i = 0; i < lanes; i++) {
+        final t = v[loB + i];
+        final u = v[hiB + i];
+        var sum = t + u;
+        final sn = sum - qv;
+        sum = sn + ((sn >> 31) & qv);
+        var d = t - u;
+        d = d + ((d >> 31) & qv);
+        v[loB + i] = sum;
+        v[hiB + i] = d;
+      }
+    }
   }
 }

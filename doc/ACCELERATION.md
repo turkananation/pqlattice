@@ -58,12 +58,21 @@ See **[SIMD.md](SIMD.md)** for:
 
 ## SIMD
 
-- SIMD is part of the **default acceleration stack** when
-  `SimdCapability` says the build can use it profitably and parity tests pass.
-- It is **not** “optional marketing.” It is **not** compiler auto-vectorization.
-- Where SIMD cannot run (some AOT/web targets), the default falls back to
-  **optimized scalar** — still accelerated relative to naive code — not to a
-  deliberately slow educational path.
+- SIMD is part of the **default acceleration stack** when the backend can lower
+  `Int32x4` to vector registers **and** the per-profile AOT gain clears the
+  1.5× adoption threshold with bit-exact parity.
+- Shipped shape: a **two-pass stage** — scalar multiply-reduce using the
+  certified per-ring recipe, then a 4-lane `Int32x4` add/sub combine with
+  branchless canonicalization. It is **not** a fully vectorized butterfly and
+  **not** compiler auto-vectorization.
+- Backend gate (`SimdCapability`): Dart VM **on**, dart2wasm **on**
+  (`v128`, unmeasured), dart2js **off** (measured 2.7× slower).
+- Where SIMD cannot run, the default falls back to the **typed scalar** kernel —
+  still accelerated relative to naive code, and itself ~1.9× faster than the
+  former `List<int>` loop — not to a deliberately slow educational path.
+- Kernel selection is evidence-driven per ring and direction; see
+  [SIMD.md](SIMD.md) §4 for the recorded table and the FN-DSA-512 inverse
+  carve-out.
 - VM limits are documented in [VM_COMPILER_BOUNDARY.md](VM_COMPILER_BOUNDARY.md);
   they constrain *how* we accelerate, not *whether* acceleration is the goal.
 
@@ -97,6 +106,7 @@ documentation leads with **accelerated by default**.
 | addFast / subFast in NTT | Yes |
 | ML-KEM NTT + pair basemul | Yes (in-place APIs) |
 | ML-DSA NTT | Yes (pqcrypto tables) |
-| FN-DSA NTT | Pending zetas |
-| SIMD pointwise | Implemented; enable via SimdCapability after AOT |
-| Bench | `tool/bench/ntt_bench.dart` |
+| FN-DSA NTT | Yes (n = 512 / 1024, Falcon-style twiddles) |
+| Typed staged NTT | Yes — default scalar kernel for every profile |
+| Split-pass `Int32x4` NTT | Yes — default on VM/Wasm where measured ≥ 1.5× |
+| Bench | `test/benchmarks/benchmarks_all.dart` (suite `simd`) |

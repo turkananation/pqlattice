@@ -179,7 +179,7 @@ Not all combinations are meaningful (e.g. `reference` mode with Montgomery is co
 | `basemul` | `test/benchmarks/basemul_benchmarks.dart` | Pointwise (ML-DSA/FN-DSA) and mlKemPairs (ML-KEM), allocating + in-place, plain + Montgomery |
 | `reduce` | `test/benchmarks/reduce_benchmarks.dart` | `reduceBarrett` vs `reducePercent` vs `montMul` vs `montReduce`, per modulus |
 | `pipeline` | `test/benchmarks/pipeline_benchmarks.dart` | Full NTT→basemul→invNTT, allocating + in-place, plain + Montgomery, all 4 profiles |
-| `simd` | `test/benchmarks/simd_parity_benchmarks.dart` | SIMD-shaped pointwise vs scalar pointwise timing (speed only — correctness parity is the test suite's job) |
+| `simd` | `test/benchmarks/simd_parity_benchmarks.dart` | Split-pass `Int32x4` NTT vs scalar kernel on identical staged lanes, per profile and direction (speed only — parity is the test suite's job) |
 | `polyvec` | `test/benchmarks/polyvec_benchmarks.dart` | PolyVec construct/clone/indexing, PolyMat construct/at/setAt, forwardVec, all 4 profiles + toy rings |
 | `schoolbook` | `test/benchmarks/schoolbook_benchmarks.dart` | Negacyclic schoolbook product (L0 oracle), toy rings (n=4/8/16) and FIPS profiles at full size |
 
@@ -196,7 +196,6 @@ The following benchmarks are **not yet implemented**. Do not claim results for t
 
 | Missing benchmark | Why it matters | Blocker |
 |-------------------|---------------|---------|
-| **pqcrypto side-by-side** | Run the identical NTT+basemul+inv workload through `pqcrypto`'s internal `Poly.ntt`/`baseMul` on the same machine, same AOT flags. This is the **only** way to claim speed relative to pqcrypto. pqcrypto is a separate repo; its benchmarks have not been executed against pqlattice. | Cross-repo setup; pqcrypto KAT/CI must still be green |
 | **JIT vs AOT variance table** | Systematic same-workload comparison across JIT and AOT builds, documenting the SIMD intrinsification gap. | Requires running both build modes on the same host (procedural) |
 | **Memory / allocation profiling** | Heap allocations per NTT/basedmul op; relevant for GC pressure on secret polys. | Pure Dart has no stable allocation-counting API; would need `dart:developer` or package-level instrumentation |
 
@@ -204,10 +203,12 @@ Done (no blocker, already implemented):
 
 | Benchmark | Location |
 |-----------|----------|
+| **pqcrypto side-by-side referee** | `pqcrypto` branch `bench/ntt-side-by-side`, `test/benchmarks/side_by_side.dart` (parity-first: identical inputs, aborts on any coefficient mismatch). Recorded cross-package rows and the honest reading are in [SIMD.md](SIMD.md) §4.3; it remains a cross-repo run, not a `pqlattice` CI gate. |
 | Barrett vs `%` microbench | `test/benchmarks/reduce_benchmarks.dart` (`reduceBarrett` vs `reducePercent`) |
 | PolyVec / PolyMat ops | `test/benchmarks/polyvec_benchmarks.dart` (construct, clone, indexing, at/setAt, forwardVec) |
 | Schoolbook oracle timing | `test/benchmarks/schoolbook_benchmarks.dart` (toy rings n=4/8/16 + FIPS profiles) |
 | Montgomery vs Barrett pipeline | `test/benchmarks/pipeline_benchmarks.dart` (plain vs montgomery domain, allocating + in-place) |
+| Split-pass SIMD vs scalar NTT | `test/benchmarks/simd_parity_benchmarks.dart` (all 4 profiles, both directions) |
 
 ### 7.6 Honest limits
 

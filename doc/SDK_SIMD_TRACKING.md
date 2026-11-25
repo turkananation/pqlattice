@@ -1,14 +1,14 @@
 # Dart SDK SIMD Tracking (for `pqlattice`)
 
-Last updated: 2026-10-27  
+Last updated: 2026-11-13  
 Status review cadence: **every 2 weeks** (or after each Dart stable / notable dev SDK bump)
 
 This document tracks **upstream Dart SDK work** that can change how far
 `pqlattice` acceleration can go **without** leaving pure Dart. It defines:
 
-1. Which GitHub issues matter and why  
-2. How to re-check progress  
-3. Exact package changes when a capability lands  
+1. Which GitHub issues matter and why
+2. How to re-check progress
+3. Exact package changes when a capability lands
 4. What we do **not** change (interop / claim boundary)
 
 Related: [SIMD.md](SIMD.md), [ACCELERATION.md](ACCELERATION.md),
@@ -19,15 +19,25 @@ Related: [SIMD.md](SIMD.md), [ACCELERATION.md](ACCELERATION.md),
 
 ## 1. Why this exists
 
-`pqlattice` acceleration is **on by default**. Today the SIMD path is:
+`pqlattice` acceleration is **on by default** and the shipped SIMD path is:
 
-> **4-wide shape + packed storage + scalar lane mul**
+> **scalar multiply-reduce pass per stage + 4-lane `Int32x4` butterfly combine**
 
-because public `Int32x4` has **no** lane-wise `operator *`. Upstream is
-actively extending `dart:typed_data` SIMD. When pairwise integer mul (and
-related ops) land and are intrinsified in **AOT**, we retire the scalar-mul
-bottleneck inside the 4-wide kernels—without FFI and without breaking
-byte-exact interop.
+This is a **two-pass stage**, not a fully vectorized butterfly: the
+multiply-and-reduce half of each butterfly stays scalar (it needs exact
+`int` products up to `q²`, which is 46 bits for ML-DSA), and the add/sub
+half runs as `Int32x4` lanes with branchless canonicalization
+`d + ((d >> 31) & q)`.
+
+That split is deliberate and measured: it needs **no** lane-wise
+`operator *`, only `+`, `-`, `>>`, `&`, and indexed load/store — all present
+in the minimum SDK this package supports (`^3.13.0`). Measured gains are in
+[SIMD.md](SIMD.md) §4.
+
+Upstream `Int32x4 operator *` would let a future **basemul / pointwise**
+kernel keep products in 32-bit lanes. It would **not** help the NTT
+butterfly: lane-wise 32-bit low-half multiply is too narrow for ML-DSA's
+`q² ≈ 2^46`, and it has no high-half variant.
 
 ---
 
@@ -36,21 +46,22 @@ byte-exact interop.
 | ID | Title | Role for `pqlattice` | Priority |
 |----|--------|----------------------|----------|
 | [#64170](https://github.com/dart-lang/sdk/issues/64170) | **SIMD tracking issue** | Umbrella: additive `Int32x4` surface, AOT intrinsification, feature completeness | **P0 — watch** |
-| [#59816](https://github.com/dart-lang/sdk/issues/59816) | **Support multiplication on Int32x4** | **True pairwise mul** — the kernel blocker for basemul / Barrett / Mont product | **P0 — unlock** |
+| [#59816](https://github.com/dart-lang/sdk/issues/59816) | **Support multiplication on Int32x4** | Would unlock a vectorized **basemul** path (32-bit wrap); cannot carry NTT butterfly products | **P1 — reduced** |
 | [#64216](https://github.com/dart-lang/sdk/issues/64216) | Relaxed SIMD (`dart2wasm` + typed_data) | Web/Wasm path; FMA-style ops; not a substitute for native integer mul | **P2 — secondary** |
 | [#62618](https://github.com/dart-lang/sdk/issues/62618) | Richer / predictable SIMD APIs | Load/store, shuffle, blend; quality of life for kernels | **P1 — quality** |
 | [#63471](https://github.com/dart-lang/sdk/issues/63471) | Int8x16 / narrower lanes | Future packing density; not required for current ML-KEM/ML-DSA/FN-DSA i32 paths | **P3 — later** |
 
-### Snapshot (as of 2026-10-27)
+### Snapshot (as of 2026-11-13, Dart 3.14.0 stable)
 
 | Capability | Upstream status | `pqlattice` posture |
 |------------|-----------------|---------------------|
-| `Int32x4` `+` `-` `&` `\|` `^` | Present; AOT specialization improved under tracking work | Used in SIMD-shaped kernels |
-| Shifts `<<` `>>` `>>>` | Added under #64170 trajectory | Use for Barrett/Montgomery shifts when available on min SDK |
-| `min` / `max` / `andNot` / compares / `splat` | Landing under #64170 | Optional for clamp / mask patterns |
-| **`Int32x4 operator *` (32-bit wrap)** | **Open** (#59816); explicitly called out as blocker on #64170 | **Still 4-wide + scalar mul** |
-| Relaxed SIMD / Wasm | Open (#64216); browser baseline concerns | Ignore for native-first crypto path until stable |
-| AOT vs JIT parity for SIMD | Ongoing fixes under tracking + related issues | Measure both; never claim portable SIMD speedups |
+| `Int32x4` `+` `-` `&` `\|` `^` `~` unary `-` | Present, intrinsified | **Used** in the combine pass |
+| Shifts `<<` `>>` `>>>` | `>>` arithmetic present everywhere; `>>>` added in **3.14.0** | Only `>>` is used, so min SDK stays `^3.13.0` |
+| `min` / `max` / `andNot` / compares / `allTrue` / `anyTrue` | Present | Available; not needed by the current kernel |
+| `Int32x4.splat` | Added in **3.14.0** | **Not used** — `Int32x4(q, q, q, q)` keeps min SDK at `^3.13.0` with identical codegen |
+| `Int32x4 operator *` (32-bit wrap) | **Not in 3.14.0.** Present on SDK `main`, targeted at 3.15.0; **no `vm:recognized` graph intrinsic yet**, codegen still tracked under #64170 | Not needed by the NTT combine pass; would enable a future basemul path |
+| Relaxed SIMD / Wasm | Open (#64216) | `v128` via `Int32x4` works on dart2wasm; **enabled but unmeasured** (see §4.3) |
+| AOT vs JIT parity for SIMD | Improvement continues under tracking | Measured AOT only; JIT numbers are variance documentation, never claims |
 
 Update the **Snapshot** table every review cycle. Do not claim a capability
 in README or API docs until it is on a **stable** SDK we depend on (or
@@ -72,41 +83,41 @@ explicitly gated by SDK constraint + runtime detection).
 [ ] Open #64170 — any new closed sub-items? CHANGELOG mention of Int32x4?
 [ ] Open #59816 — still open? Any CL link for operator *?
 [ ] sdk/CHANGELOG.md (dev or stable) — Int32x4 * / mul / min / shifts?
-[ ] Local: dart --version; if newer than last check, run tool/bench + SIMD parity tests AOT
+[ ] Local: dart --version; if newer than last check, run AOT SIMD benchmark
 [ ] Update Snapshot table + "Last reviewed" below
-[ ] If mul landed: open pqlattice issue/PR per §4 (do not land without parity)
+[ ] If mul has a VM graph intrinsic: open pqlattice issue/PR per §4 (do not
+    land without parity)
 ```
 
-**Last reviewed:** 2026-10-27  
-**Next review due:** 2026-11-10  
+**Last reviewed:** 2026-11-13  
+**Next review due:** 2026-11-27  
 
-### How to verify mul if it appears in a dev SDK
+### How to verify a new `Int32x4` op
 
 ```bash
-# Compile a 4-line probe (or use test/simd_pointwise_parity_test.dart extended)
-dart compile exe tool/bench/ntt_bench.dart -o /tmp/ntt_bench
-/tmp/ntt_bench
+# AOT benchmark matrix (typed scalar vs split-pass vector, all profiles)
+dart compile exe test/benchmarks/benchmarks_all.dart -o /tmp/pq_bench
+/tmp/pq_bench --mode aot | awk -F'\t' 'NR==1 || $1=="simd"'
 
-# Parity (must remain bit-identical to scalar/Barrett path)
-dart test test/simd_pointwise_parity_test.dart
+# Bit-exactness (merge gate, independent of timing)
+dart test test/simd_ntt_parity_test.dart
 ```
 
-Confirm **AOT** and **JIT**. JIT-only wins do not change the default kernel.
+Confirm **AOT**. JIT-only wins do not change the default kernel.
 
 ---
 
 ## 4. How `pqlattice` changes when upstream moves
 
-### 4.1 When `Int32x4 operator *` lands (stable or pinned min SDK)
+### 4.1 When `Int32x4 operator *` lands with a real VM intrinsic
 
 | Step | Action | Success criteria |
 |------|--------|------------------|
-| 1 | Extend `lib/src/simd/` pointwise / basemul path to use `a * b` (lane-wise) | Same residues as scalar oracle |
-| 2 | Keep **scalar mul fallback** for older SDKs (`sdk` constraint or capability flag) | CI on oldest supported SDK still green |
-| 3 | Barrett/Montgomery product steps: prefer vector mul + existing vector shifts | Interop rule unchanged ([INTEROP_AND_FIPS_RULE.md](INTEROP_AND_FIPS_RULE.md)) |
-| 4 | Update [SIMD.md](SIMD.md) § “What SIMD means” — remove “no pairwise mul” | Doc matches code |
-| 5 | Bench AOT: report before/after in PR; do **not** claim universal speedup | Numbers on x64 + arm64 if available |
-| 6 | `KernelMode.accelerated` may prefer the true-mul path when parity-proven | Fail closed: parity fail → optimized scalar |
+| 1 | Prototype a 4-lane **pointwise / mlKemPairs** kernel — not the NTT butterfly | Same residues as the scalar oracle |
+| 2 | Keep the scalar product for products exceeding 32 bits (ML-DSA `q² ≈ 2^46`) | No silent wraparound; document the bound |
+| 3 | Bench AOT: report before/after in the PR; do **not** claim universal speedup | Numbers on x64 + arm64 if available |
+| 4 | Update [SIMD.md](SIMD.md) §4 and this Snapshot table | Doc matches code |
+| 5 | `KernelMode.accelerated` may prefer the vector product when parity-proven | Fail closed: parity fail → optimized scalar |
 
 **Semantics we require from upstream (document in PR if unclear):**
 
@@ -114,7 +125,8 @@ Confirm **AOT** and **JIT**. JIT-only wins do not change the default kernel.
 - **Low 32 bits** (wrapping), matching hardware 32×32→32 low half  
 - Identical on VM AOT, JIT, and other backends we claim to support  
 
-Widening / high-half mul is **out of scope** for the first adoption; optional later.
+Widening / high-half mul would be needed for a fully vectorized butterfly;
+that is **out of scope** for the first adoption.
 
 ### 4.2 When only shifts / min / max / andNot land (no mul yet)
 
@@ -130,7 +142,8 @@ Widening / high-half mul is **out of scope** for the first adoption; optional la
 | Change | Policy |
 |--------|--------|
 | Native VM kernels | **No** dependency |
-| Future `dart2wasm` optional path | Separate experiment; must still pass residue parity |
+| dart2wasm `Int32x4` | Enabled today via `SimdCapability`; **no measured speedup claim** — local Node 20 lacks wasm-gc, so the AOT wasm probe cannot run |
+| dart2js | **Disabled.** Measured 0.37× (2.7× slower) on the split kernel |
 | Document in this file only until a real consumer path exists | Yes |
 
 ### 4.4 What never changes because of SDK SIMD work
@@ -146,9 +159,10 @@ Widening / high-half mul is **out of scope** for the first adoption; optional la
 
 If commenting on #59816 or #64170, keep the ask **narrow**:
 
-1. Use case: integer NTT / basemul / Barrett for PQC rings (exact int products).  
+1. Use case: integer basemul / pointwise products for PQC rings (exact int products).  
 2. Why not `Float32x4`: intermediates exceed exact float32 integer range.  
-3. Requested API: `Int32x4 operator *` with **32-bit wrap** per lane.  
+3. Requested API: `Int32x4 operator *` with **32-bit wrap** per lane, plus a
+   `vm:recognized` AOT intrinsic so it does not compile to lane extraction.  
 4. Offer: minimal AOT microbench + parity test from this package.
 
 Do **not** demand language changes, new syntax, or breaking changes to existing operators.
@@ -161,9 +175,10 @@ Do **not** demand language changes, new syntax, or breaking changes to existing 
 On any session that touches SIMD kernels or ACCELERATION/SIMD docs:
   1. Read this file (Snapshot + Last reviewed).
   2. If review is overdue, run §3 checklist and update dates.
-  3. Do not implement "true pairwise mul" until §2 shows #59816 done
-     or a shipped SDK documents Int32x4 *.
-  4. Any kernel change: scalar parity test required before merge.
+  3. Do not implement a vector product until §2 shows #59816 done AND a
+     shipped SDK documents Int32x4 *.
+  4. Any kernel change: bit-exact parity test required before merge.
+  5. Any speed claim: AOT only, per-profile, with the hardware named.
 ```
 
 ---
@@ -172,6 +187,5 @@ On any session that touches SIMD kernels or ACCELERATION/SIMD docs:
 
 | Date | Note |
 |------|------|
-| 2026-10-27 | Initial register: #64170, #59816, #64216, #62618, #63471. Pairwise mul still open. Shape remains 4-wide + scalar mul. |
-
-Append a row on every formal review or when an issue closes.
+| 2026-10-27 | Initial register: #64170, #59816, #64216, #62618, #63471. Pairwise mul still open. Shape was 4-wide + scalar mul. |
+| 2026-11-13 | Split-pass NTT kernels shipped. `operator *` re-scoped from "kernel blocker" to "future basemul only": lane-wise 32-bit wrap cannot carry ML-DSA `q² ≈ 2^46`. 3.14 surface confirmed (`splat`, `>>>`); avoided to keep min SDK `^3.13.0`. dart2js gated off (0.37×); dart2wasm enabled, unmeasured. |

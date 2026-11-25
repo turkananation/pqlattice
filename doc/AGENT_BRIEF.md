@@ -172,6 +172,10 @@ See [INTEROP_AND_FIPS_RULE.md](INTEROP_AND_FIPS_RULE.md).
 - Fused Barrett on ML-KEM/ML-DSA NTT + basemul; addFast/subFast
 - In-place NTT / basemul APIs
 - ML-DSA NTT tables + round-trip tests
-- SIMD-shaped pointwise helper; SimdCapability still gates default dispatch
-- tool/bench/ntt_bench.dart
+- Split-pass `Int32x4` NTT kernels (six, per ring and direction) with
+  bit-exact parity; `LatticeKernels.preferSimdNtt` gates per profile
+- Typed staged scalar kernels (`Int32List` lanes) as the comparator and
+  fallback; ~1.9× faster than the former `List<int>` loop
+- Per-ring inlined basemul (`pointwise` / `mlKemPairs`) with no `%` fallback
+- `test/benchmarks/benchmarks_all.dart` (suite `simd`)
 

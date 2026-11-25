@@ -36,16 +36,23 @@ final class ModQ {
   /// \((a \cdot b) \bmod q\) via [reduce].
   static int mul(int a, int b, int q) => reduce(a * b, q);
 
-  /// Single conditional add for values already near \([0, q)\).
+  /// One correction for values already near \([0, q)\).
+  ///
+  /// `a + b` is in `[0, 2q)` when both inputs are in `[0, q)`. A sign mask
+  /// subtracts `q` when the sum is at least `q`.
   static int addFast(int a, int b, int q) {
     final x = a + b;
-    return x >= q ? x - q : x;
+    final sn = x - q;
+    return x - (q & ~(sn >> 63));
   }
 
-  /// Single conditional sub for values already near \([0, q)\).
+  /// Single correction for values already near \([0, q)\).
+  ///
+  /// `a - b` is in `(-q, q)` when both inputs are in `[0, q)`. The sign mask
+  /// adds `q` when the difference is negative.
   static int subFast(int a, int b, int q) {
     final x = a - b;
-    return x < 0 ? x + q : x;
+    return x + (q & (x >> 63));
   }
 
   /// Product reduced with Barrett parameters (falls back to [reduce] if not ready).
@@ -62,7 +69,10 @@ final class ModQ {
   static int freeze(int a, int q) => reduce(a, q);
 
   /// Subtract [q] if [a] `>=` [q]; otherwise return [a]. Does not handle negatives.
-  static int csubq(int a, int q) => a >= q ? a - q : a;
+  static int csubq(int a, int q) {
+    final sn = a - q;
+    return a - (q & ~(sn >> 63));
+  }
 
   /// Barrett reduction of [a] into \([0, q)\).
   ///
@@ -120,9 +130,9 @@ final class ModQ {
     final logR = params.logR;
     final t = ((a & mask) * params.nPrime) & mask;
     var u = (a + t * q) >> logR;
-    if (u >= q) u -= q;
-    if (u < 0) u += q;
-    return u;
+    final sn = u - q;
+    u = u - (q & ~(sn >> 63));
+    return u + (q & (u >> 63));
   }
 
   /// Product in Montgomery domain: \(a_{\mathrm{m}} b_{\mathrm{m}} R^{-1} \bmod q\).
